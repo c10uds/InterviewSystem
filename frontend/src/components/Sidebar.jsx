@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserOutlined, FileTextOutlined, HistoryOutlined, TeamOutlined } from '@ant-design/icons';
+import { FileTextOutlined, HistoryOutlined, TeamOutlined } from '@ant-design/icons';
 
 const sidebarStyle = {
   width: 64,
@@ -36,9 +36,6 @@ const Sidebar = ({ active, onChange }) => (
     </div>
     <div style={iconBtnStyle(active === 'record')} onClick={() => onChange('record')} title="面试记录">
       <HistoryOutlined />
-    </div>
-    <div style={iconBtnStyle(active === 'profile')} onClick={() => onChange('profile')} title="个人信息">
-      <UserOutlined />
     </div>
     <div style={iconBtnStyle(active === 'doc')} onClick={() => onChange('doc')} title="文档中心">
       <FileTextOutlined />

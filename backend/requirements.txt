@@ -1,1 +1,5 @@
-flask 
+flask
+flask_sqlalchemy
+pyjwt
+pymysql
+flask-migrate 
