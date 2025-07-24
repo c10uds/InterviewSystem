@@ -3,3 +3,5 @@ flask_sqlalchemy
 pyjwt
 pymysql
 flask-migrate 
+opencv-python
+pybase64

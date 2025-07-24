@@ -10,6 +10,8 @@ from flask import send_from_directory
 from flask_migrate import Migrate
 import requests
 import json
+import cv2
+import base64
 
 app = Flask(__name__)
 CORS(app)
@@ -108,8 +110,48 @@ def positions():
 @app.route('/api/questions', methods=['GET'])
 def questions():
     position = request.args.get('position')
-    # 可根据岗位返回不同题目
-    return jsonify(['请自我介绍一下', '你最大的优点是什么？'])
+    # 根据岗位返回不同题目
+    position_questions = {
+        '前端开发': [
+            '请自我介绍一下',
+            '你熟悉哪些前端框架？',
+            '说说你对响应式设计的理解',
+            '如何优化前端性能？',
+            '介绍一下你常用的调试工具',
+            '你如何处理浏览器兼容性问题？',
+            '说说你对前端安全的理解',
+            '你了解哪些前端构建工具？',
+            '请描述一次你解决技术难题的经历',
+            '你怎么看待前后端分离？'
+        ],
+        '后端开发': [
+            '请自我介绍一下',
+            '你熟悉哪些后端开发语言？',
+            '说说你对RESTful API的理解',
+            '如何保证接口的安全性？',
+            '你如何优化数据库性能？',
+            '介绍一下你常用的后端框架',
+            '你如何处理高并发场景？',
+            '说说你对微服务的理解',
+            '请描述一次你解决线上故障的经历',
+            '你怎么看待DevOps？'
+        ],
+        '产品经理': [
+            '请自我介绍一下',
+            '你如何理解产品经理的职责？',
+            '说说你主导过的一个产品项目',
+            '你如何进行需求分析？',
+            '如何与技术团队高效沟通？',
+            '你怎么看待用户体验？',
+            '遇到需求变更你会怎么处理？',
+            '如何评估产品上线后的效果？',
+            '请描述一次你推动项目落地的经历',
+            '你怎么看待数据驱动产品？'
+        ]
+    }
+    default_questions = ['请自我介绍一下', '你最大的优点是什么？']
+    questions = position_questions.get(position, default_questions)
+    return jsonify(questions)
 
 @app.route('/api/interview', methods=['POST'])
 def interview():
@@ -255,10 +297,45 @@ def ai_evaluate():
         asr_res = requests.post(f'{AI_BASE_URL}/api/asr', files={'audio': open(save_path, 'rb')}, data={'language': 'zh_cn'})
         asr_data = asr_res.json()
         asr_texts.append(asr_data.get('text', ''))
+    #     # 处理视频帧并分析微表情、暂未启用
+    # video = request.files.get('video')
+    # micro_expression_summary = ""
+    # if video:
+    #     video_filename = f"video_{int(datetime.datetime.now().timestamp())}_{video.filename}"
+    #     video_save_path = os.path.join(UPLOAD_FOLDER, video_filename)
+    #     video.save(video_save_path)
+    #     cap = cv2.VideoCapture(video_save_path)
+    #     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    #     fps = cap.get(cv2.CAP_PROP_FPS)
+    #     frames_to_analyze = []
+    #     for i in range(0, frame_count, int(fps)):  # 每秒一帧
+    #         cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+    #         ret, frame = cap.read()
+    #         if ret:
+    #             _, buffer = cv2.imencode('.jpg', frame)
+    #             img_b64 = base64.b64encode(buffer).decode('utf-8')
+    #             frames_to_analyze.append(img_b64)
+    #     cap.release()
+    #     # 构造prompt并发送到/api/llm
+    #     micro_prompt = (
+    #         "请分析以下面试视频帧中的应聘者微表情，判断其情绪状态、紧张程度、自信度等，并给出面试表现建议。"
+    #         "图片已按顺序base64编码，图片内容为面试者面部特写。"
+    #         "请用简洁的中文总结整体微表情表现和建议。"
+    #     )
+    #     llm_payload = {
+    #         "question": micro_prompt,
+    #         "images": frames_to_analyze,
+    #         "model": "spark"
+    #     }
+    #     llm_res = requests.post(f'{AI_BASE_URL}/api/llm', json=llm_payload)
+    #     llm_data = llm_res.json()
+    #     micro_expression_summary = llm_data.get('answer', '')
     # 多模态评测
-    eval_prompt = f"请根据以下面试问题和回答，从专业知识水平、技能匹配度、语言表达能力、逻辑思维能力、创新能力、应变抗压能力六个维度，量化评测并给出建议：\n"
+    eval_prompt = f"请根据以下面试问题和回答还有微表情分析结果，从专业知识水平、技能匹配度、语言表达能力、逻辑思维能力、创新能力、应变抗压能力六个维度，量化评测并给出建议：\n"
     for i, (q, a, t) in enumerate(zip(questions, answers, asr_texts)):
         eval_prompt += f"Q{i+1}: {q}\nA{i+1}: {a}\n语音识别: {t}\n"
+    # if micro_expression_summary:
+    #     eval_prompt += f"\n面试过程中的微表情分析结果：{micro_expression_summary}\n"
     eval_prompt += "请以JSON格式返回各项能力分数和改进建议。"
     eval_res = requests.post(f'{AI_BASE_URL}/api/llm', data={'question': eval_prompt, 'model': 'spark'})
     eval_data = eval_res.json()
