@@ -1,0 +1,81 @@
+# 编译生成的文件
+build/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+
+# IDE 配置文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 日志文件
+*.log
+logs/
+
+# 临时文件
+tmp/
+temp/
+*.tmp
+*.temp
+
+# 模型文件（通常很大）
+models/
+*.model
+*.bin
+
+# 配置文件（可能包含敏感信息）
+config/local/
+*.local.json
+.env
+.env.local
+
+# 运行时生成的文件
+public/audio/
+public/uploads/
+*.pid
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 编译器生成的文件
+*.exe
+*.out
+a.out
+
+# CMake 文件
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+
+# 包管理器文件
+conan.lock
+vcpkg_installed/
+
+# 测试覆盖率文件
+*.gcno
+*.gcda
+*.gcov
+coverage/
+
+# 文档生成文件
+docs/html/
+docs/latex/
+doxygen_warnings.txt
+
+# 打包文件
+*.tar.gz
+*.zip
+*.deb
+*.rpm
+
+# 依赖库（如果本地安装）
+third_party/libs/
+vendor/

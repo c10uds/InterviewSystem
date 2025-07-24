@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@ant-design/icons": "^6.0.0",
+    "react-markdown": "^10.1.0"
+  }
+}
