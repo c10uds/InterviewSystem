@@ -5,6 +5,7 @@ import jwt
 import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
+from dotenv import load_dotenv
 from functools import wraps
 from flask import send_from_directory
 from flask_migrate import Migrate
@@ -12,11 +13,18 @@ import requests
 import json
 import cv2
 import base64
+from langsmith import traceable
+from langgraph_agent import next_question, evaluate_interview
+import uuid
+import logging
+
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 app.secret_key = 'your_secret_key'  # 用于session
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:123qwe@localhost/interview_demo'
+# SQLAlchemy数据库配置
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI', 'mysql+pymysql://root:123qwe@localhost/interview_demo')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -62,8 +70,9 @@ class InterviewRecord(db.Model):
 
 # init_db()  # 已弃用，使用Flask-Migrate自动迁移
 
-JWT_SECRET = 'jwt_secret_key'
-JWT_ALGORITHM = 'HS256'
+# JWT配置
+JWT_SECRET = os.getenv('JWT_SECRET', 'your_jwt_secret')
+JWT_ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256')
 
 def login_required(f):
     @wraps(f)
@@ -79,10 +88,23 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
+# 日志系统配置
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)s %(message)s',
+    handlers=[
+        logging.FileHandler('app.log', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.json
+    logger.info("[POST] /api/login 请求: %s", data)
     if not data or not isinstance(data, dict):
+        logger.warning("/api/login 参数错误: %s", data)
         return jsonify({'success': False, 'msg': '参数错误'}), 400
     email = data.get('email')
     password = data.get('password')
@@ -95,8 +117,10 @@ def login():
             'exp': datetime.datetime.utcnow() + datetime.timedelta(days=1)
         }
         token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+        logger.info("/api/login 登录成功: %s", email)
         return jsonify({'success': True, 'token': token, 'email': user.email, 'is_admin': user.is_admin, 'name': user.name})
     else:
+        logger.warning("/api/login 登录失败: %s", email)
         return jsonify({'success': False, 'msg': '邮箱或密码错误'}), 401
 
 # from sdk_wrapper import analyze_interview, get_positions, get_questions
@@ -105,7 +129,8 @@ def login():
 
 @app.route('/api/positions', methods=['GET'])
 def positions():
-    return jsonify(['前端开发', '后端开发', '产品经理'])
+    logger.info("[GET] /api/positions 被调用，token=%s", request.headers.get('Authorization'))
+    return jsonify({'positions': ['前端开发', '后端开发', '产品经理']})
 
 @app.route('/api/questions', methods=['GET'])
 def questions():
@@ -182,7 +207,9 @@ def learning_path():
 @app.route('/api/register', methods=['POST'])
 def register():
     data = request.json
+    logger.info("[POST] /api/register 请求: %s", data)
     if not data or not isinstance(data, dict):
+        logger.warning("/api/register 参数错误: %s", data)
         return jsonify({'success': False, 'msg': '参数错误'}), 400
     email = data.get('email')
     password = data.get('password')
@@ -192,8 +219,10 @@ def register():
     grade = data.get('grade')
     target_position = data.get('target_position')
     if not all([email, password, name, phone, school, grade, target_position]):
+        logger.warning("/api/register 缺少字段: %s", data)
         return jsonify({'success': False, 'msg': '所有字段均为必填'}), 400
     if User.query.filter_by(email=email).first():
+        logger.warning("/api/register 邮箱已注册: %s", email)
         return jsonify({'success': False, 'msg': '该邮箱已注册'}), 400
     user = User(
         email=email,
@@ -207,9 +236,10 @@ def register():
     )
     db.session.add(user)
     db.session.commit()
+    logger.info("/api/register 注册成功: %s", email)
     return jsonify({'success': True, 'msg': '注册成功'})
 
-UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads', 'avatars')
+UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', 'uploads/avatars')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 @app.route('/api/upload_avatar', methods=['POST'])
@@ -258,99 +288,60 @@ def serve_avatar(filename):
 
 AI_BASE_URL = 'http://127.0.0.1:8081'
 
-@app.route('/api/ai_questions', methods=['POST'])
-@login_required
-def ai_questions():
-    data = request.json
-    position = data.get('position')
-    if not position:
-        return jsonify({'success': False, 'msg': '缺少岗位参数'}), 400
-    # 调用本地AI接口生成问题
-    prompt = f"请为{position}岗位生成10个典型面试问题，要求简洁明了。"
-    ai_res = requests.post(f'{AI_BASE_URL}/api/llm', data={'question': prompt, 'model': 'spark'})
-    ai_data = ai_res.json()
-    # 假设AI返回answer为\n分割的题目
-    questions = [q.strip() for q in ai_data.get('answer', '').split('\n') if q.strip()]
-    if len(questions) < 10:
-        questions += [f"补充问题{i+1}" for i in range(10-len(questions))]
-    return jsonify({'success': True, 'questions': questions[:10]})
+# 删除CppAISDK类、cpp_sdk对象、interview_workflow函数
 
-@app.route('/api/ai_evaluate', methods=['POST'])
+@app.route('/api/interview_next', methods=['POST'])
 @login_required
-def ai_evaluate():
-    user_token = request.headers.get('Authorization')
-    payload = jwt.decode(user_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-    user = User.query.get(payload['user_id'])
-    position = request.form.get('position')
-    questions = json.loads(request.form.get('questions', '[]'))
-    answers = json.loads(request.form.get('answers', '[]'))
-    # 处理音频文件
+def interview_next():
+    data = request.form
+    position = data.get('position')
+    questions = json.loads(data.get('questions', '[]'))
+    answers = json.loads(data.get('answers', '[]'))
+    audio_file = request.files.get('audio')
+    asr_text = ""
+    if audio_file:
+        filename = f"answer_{int(datetime.datetime.now().timestamp())}_{audio_file.filename}"
+        save_path = os.path.join(UPLOAD_FOLDER, filename)
+        audio_file.save(save_path)
+        # 语音转文本
+        from langgraph_agent import cpp_sdk
+        asr_text = cpp_sdk.asr(save_path)
+        answers.append(asr_text)
+    next_q = next_question(position, questions, answers)
+    questions.append(next_q)
+    return jsonify({'next_question': next_q, 'questions': questions, 'answers': answers})
+
+@app.route('/api/interview_evaluate', methods=['POST'])
+@login_required
+def interview_evaluate():
+    data = request.form
+    position = data.get('position')
+    questions = json.loads(data.get('questions', '[]'))
+    answers = json.loads(data.get('answers', '[]'))
     audio_files = request.files.getlist('audios')
-    audio_urls = []
-    asr_texts = []
+    audio_paths = []
     for audio in audio_files:
         filename = f"answer_{int(datetime.datetime.now().timestamp())}_{audio.filename}"
         save_path = os.path.join(UPLOAD_FOLDER, filename)
         audio.save(save_path)
-        audio_urls.append(f"/static/avatars/{filename}")
-        # 语音识别
-        asr_res = requests.post(f'{AI_BASE_URL}/api/asr', files={'audio': open(save_path, 'rb')}, data={'language': 'zh_cn'})
-        asr_data = asr_res.json()
-        asr_texts.append(asr_data.get('text', ''))
-    #     # 处理视频帧并分析微表情、暂未启用
-    video = request.files.get('video')
-    micro_expression_summary = ""
-    if video:
-        video_filename = f"video_{int(datetime.datetime.now().timestamp())}_{video.filename}"
-        video_save_path = os.path.join(UPLOAD_FOLDER, video_filename)
-        video.save(video_save_path)
-        cap = cv2.VideoCapture(video_save_path)
-        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        frames_to_analyze = []
-        for i in range(0, frame_count, int(fps)):  # 每秒一帧
-            cap.set(cv2.CAP_PROP_POS_FRAMES, i)
-            ret, frame = cap.read()
-            if ret:
-                _, buffer = cv2.imencode('.jpg', frame)
-                img_b64 = base64.b64encode(buffer).decode('utf-8')
-                frames_to_analyze.append(img_b64)
-        cap.release()
-        # 构造prompt并发送到/api/llm
-        micro_prompt = (
-            "请分析以下面试视频帧中的应聘者微表情，判断其情绪状态、紧张程度、自信度等，并给出面试表现建议。"
-            "图片已按顺序base64编码，图片内容为面试者面部特写。"
-            "请用简洁的中文总结整体微表情表现和建议。"
-        )
-        llm_payload = {
-            "question": micro_prompt,
-            "images": frames_to_analyze,
-            "model": "spark"
-        }
-        llm_res = requests.post(f'{AI_BASE_URL}/api/llm', json=llm_payload)
-        llm_data = llm_res.json()
-        micro_expression_summary = llm_data.get('answer', '')
-    # 多模态评测
-    eval_prompt = f"请根据以下面试问题和回答还有微表情分析结果，从专业知识水平、技能匹配度、语言表达能力、逻辑思维能力、创新能力、应变抗压能力六个维度，量化评测并给出建议：\n"
-    for i, (q, a, t) in enumerate(zip(questions, answers, asr_texts)):
-        eval_prompt += f"Q{i+1}: {q}\nA{i+1}: {a}\n语音识别: {t}\n"
-    # if micro_expression_summary:
-    #     eval_prompt += f"\n面试过程中的微表情分析结果：{micro_expression_summary}\n"
-    eval_prompt += "请以JSON格式返回各项能力分数和改进建议。"
-    eval_res = requests.post(f'{AI_BASE_URL}/api/llm', data={'question': eval_prompt, 'model': 'spark'})
-    eval_data = eval_res.json()
-    # 保存面试记录
+        audio_paths.append(save_path)
+    # 评测
+    eval_result = evaluate_interview(position, questions, answers)
+    # 保存到数据库
+    user_token = request.headers.get('Authorization')
+    payload = jwt.decode(user_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    user = User.query.get(payload['user_id'])
     record = InterviewRecord(
         user_id=user.id,
         position=position,
         questions=json.dumps(questions),
         answers=json.dumps(answers),
-        audio_urls=json.dumps(audio_urls),
-        result=json.dumps(eval_data)
+        audio_urls=json.dumps(audio_paths),
+        result=json.dumps(eval_result)
     )
     db.session.add(record)
     db.session.commit()
-    return jsonify({'success': True, 'result': eval_data})
+    return jsonify({'success': True, 'result': eval_result})
 
 @app.route('/api/interview_records', methods=['GET'])
 @login_required
@@ -374,25 +365,97 @@ def get_interview_records():
     except Exception:
         return jsonify({'success': False, 'msg': 'token无效'}), 401
 
+# 简单内存 session 存储
+INTERVIEW_SESSION = {}
+
+@app.route('/api/ai_questions', methods=['POST'])
+@login_required
+def ai_questions():
+    data = request.json
+    user = getattr(request, 'user', {})
+    logger.info("[POST] /api/ai_questions 用户: %s, 请求: %s", user, data)
+    position = data.get('position', '')
+    position_questions = {
+        '前端开发': [
+            '请自我介绍一下',
+            '你熟悉哪些前端框架？',
+            '说说你对响应式设计的理解',
+            '如何优化前端性能？',
+            '介绍一下你常用的调试工具',
+            '你如何处理浏览器兼容性问题？',
+            '说说你对前端安全的理解',
+            '你了解哪些前端构建工具？',
+            '请描述一次你解决技术难题的经历',
+            '你怎么看待前后端分离？'
+        ],
+        '后端开发': [
+            '请自我介绍一下',
+            '你熟悉哪些后端开发语言？',
+            '说说你对RESTful API的理解',
+            '如何保证接口的安全性？',
+            '你如何优化数据库性能？',
+            '介绍一下你常用的后端框架',
+            '你如何处理高并发场景？',
+            '说说你对微服务的理解',
+            '请描述一次你解决线上故障的经历',
+            '你怎么看待DevOps？'
+        ],
+        '产品经理': [
+            '请自我介绍一下',
+            '你如何理解产品经理的职责？',
+            '说说你主导过的一个产品项目',
+            '你如何进行需求分析？',
+            '如何与技术团队高效沟通？',
+            '你怎么看待用户体验？',
+            '遇到需求变更你会怎么处理？',
+            '如何评估产品上线后的效果？',
+            '请描述一次你推动项目落地的经历',
+            '你怎么看待数据驱动产品？'
+        ]
+    }
+    default_questions = ['请自我介绍一下', '你最大的优点是什么？', '你最大的缺点是什么？']
+    questions = position_questions.get(position, default_questions)[:3]
+    session_id = str(uuid.uuid4())
+    INTERVIEW_SESSION[session_id] = {
+        'position': position,
+        'history_questions': questions[:],
+        'history_answers': []
+    }
+    logger.info("/api/ai_questions 返回: session_id=%s, questions=%s", session_id, questions)
+    return jsonify({'success': True, 'questions': questions, 'session_id': session_id})
+
 @app.route('/api/ai_next_question', methods=['POST'])
 @login_required
 def ai_next_question():
     data = request.json
-    position = data.get('position')
-    history_questions = data.get('history_questions', [])
-    history_answers = data.get('history_answers', [])
-    last_answer = data.get('last_answer', '')
-    if not position or not last_answer:
-        return jsonify({'success': False, 'msg': '参数不全'}), 400
-    # 构造prompt
-    prompt = f"你是{position}岗位的面试官。已问过如下问题及回答：\n"
-    for i, (q, a) in enumerate(zip(history_questions, history_answers)):
-        prompt += f"Q{i+1}:{q}\nA{i+1}:{a}\n"
-    prompt += f"请根据应聘者的最新回答，提出下一个更有针对性的问题。"
-    ai_res = requests.post(f'{AI_BASE_URL}/api/llm', data={'question': prompt, 'model': 'spark'})
-    ai_data = ai_res.json()
-    next_question = ai_data.get('answer', '').strip()
-    return jsonify({'success': True, 'question': next_question})
+    user = getattr(request, 'user', {})
+    session_id = data.get('session_id')
+    question = data.get('question')
+    answer = data.get('answer')
+    logger.info("[POST] /api/ai_next_question 用户: %s, session_id: %s, question: %s, answer: %s", user, session_id, question, answer)
+    if not session_id or session_id not in INTERVIEW_SESSION:
+        logger.warning("/api/ai_next_question 无效session_id: %s", session_id)
+        return jsonify({'success': False, 'msg': '无效的session_id'}), 400
+    if not question or answer is None:
+        logger.warning("/api/ai_next_question 缺少题目或答案: %s", data)
+        return jsonify({'success': False, 'msg': '缺少题目或答案'}), 400
+    # 记录历史
+    INTERVIEW_SESSION[session_id]['history_questions'].append(question)
+    INTERVIEW_SESSION[session_id]['history_answers'].append(answer)
+    # 这里调用AI生成新题目，直接用已导入的 next_question
+    position = INTERVIEW_SESSION[session_id]['position']
+    history_questions = INTERVIEW_SESSION[session_id]['history_questions']
+    history_answers = INTERVIEW_SESSION[session_id]['history_answers']
+    round_num = len(history_questions)
+    if round_num >= 10:
+        logger.info("/api/ai_next_question 已达最大轮数: %s", session_id)
+        return jsonify({'success': True, 'questions': []})
+    # 调用AI生成新题目
+    new_q = next_question(position, history_questions, history_answers)
+    next_questions = [new_q] if new_q else []
+    INTERVIEW_SESSION[session_id]['history_questions'].extend(next_questions)
+    logger.info("/api/ai_next_question 返回: %s", next_questions)
+    return jsonify({'success': True, 'questions': next_questions})
 
 if __name__ == '__main__':
     app.run(debug=True) 

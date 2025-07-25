@@ -6,6 +6,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cstring>
+#include <json/json.h>
 
 namespace sparkchain {
 
@@ -46,7 +47,7 @@ void ImageRecognitionHandler::handle_post(const httplib::Request& req, httplib::
 ImageRecognitionRequest ImageRecognitionHandler::parse_image_request(const httplib::Request& req) {
     ImageRecognitionRequest request;
     
-    // 获取图像数据 - 支持两种方式：multipart form 或 base64 参数
+    // 获取图像数据 - 支持两种方式：multipart form 或 JSON body
     if (req.form.has_file("image")) {
         // 方式1: 文件上传
         auto image_files = req.form.get_files("image");
@@ -60,21 +61,47 @@ ImageRecognitionRequest ImageRecognitionHandler::parse_image_request(const httpl
                 request.format = "jpg"; // 默认格式
             }
         }
+        
+        // 从表单数据获取其他参数
+        request.detect_faces = get_param(req, "detect_faces", "true") == "true";
+        request.analyze_emotion = get_param(req, "analyze_emotion", "true") == "true";
+        request.analyze_micro_expression = get_param(req, "analyze_micro_expression", "false") == "true";
+        request.analysis_mode = get_param(req, "analysis_mode", "interview");
+        
+    } else if (!req.body.empty()) {
+        // 方式2: JSON请求体
+        ::Json::Value json_body;
+        ::Json::Reader reader;
+        
+        if (!reader.parse(req.body, json_body)) {
+            throw std::runtime_error("Invalid JSON in request body");
+        }
+        
+        // 获取图像数据
+        if (json_body.isMember("image_data") && json_body["image_data"].isString()) {
+            request.image_data = json_body["image_data"].asString();
+        }
+        
+        // 获取其他参数
+        request.format = json_body.get("format", "jpg").asString();
+        request.detect_faces = json_body.get("detect_faces", true).asBool();
+        request.analyze_emotion = json_body.get("analyze_emotion", true).asBool();
+        request.analyze_micro_expression = json_body.get("analyze_micro_expression", false).asBool();
+        request.analysis_mode = json_body.get("analysis_mode", "interview").asString();
+        
     } else {
-        // 方式2: base64编码的图像数据
+        // 方式3: URL参数 (向后兼容)
         request.image_data = get_param(req, "image_data");
         request.format = get_param(req, "format", "jpg");
+        request.detect_faces = get_param(req, "detect_faces", "true") == "true";
+        request.analyze_emotion = get_param(req, "analyze_emotion", "true") == "true";
+        request.analyze_micro_expression = get_param(req, "analyze_micro_expression", "false") == "true";
+        request.analysis_mode = get_param(req, "analysis_mode", "interview");
     }
     
     if (request.image_data.empty()) {
         throw std::runtime_error("No image data provided");
     }
-    
-    // 获取其他参数
-    request.detect_faces = get_param(req, "detect_faces", "true") == "true";
-    request.analyze_emotion = get_param(req, "analyze_emotion", "true") == "true";
-    request.analyze_micro_expression = get_param(req, "analyze_micro_expression", "false") == "true";
-    request.analysis_mode = get_param(req, "analysis_mode", "interview");
     
     LOG_DEBUG_F("解析图像识别请求: 格式=%s, 检测人脸=%s, 分析情绪=%s, 分析模式=%s", 
                request.format.c_str(), 
@@ -185,8 +212,29 @@ bool ImageRecognitionHandler::validate_image_request(const ImageRecognitionReque
 
 std::string ImageRecognitionHandler::decode_base64_image(const std::string& base64_data) {
     // 简化的base64解码实现
-    // 实际项目中应该使用专业的base64库
-    return base64_data; // 暂时返回原数据
+    if (base64_data.empty()) {
+        return "";
+    }
+
+    static const std::string base64_chars = 
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz"
+        "0123456789+/";
+    
+    std::string decoded_data;
+    int val = 0, valb = -8;
+    for (unsigned char c : base64_data) {
+        if (c == '=') break; // Padding character
+        if (base64_chars.find(c) == std::string::npos) continue; // Ignore invalid characters
+        
+        val = (val << 6) + base64_chars.find(c);
+        valb += 6;
+        if (valb >= 0) {
+            decoded_data.push_back(char((val >> valb) & 0xFF));
+            valb -= 8;
+        }
+    }
+    return decoded_data;
 }
 
 bool ImageRecognitionHandler::is_valid_image_format(const std::string& format) {
@@ -200,9 +248,33 @@ bool ImageRecognitionHandler::is_valid_image_format(const std::string& format) {
 
 // 简化的base64编码实现
 std::string ImageRecognitionHandler::encode_base64(const std::string& binary_data) {
-    // 这里应该实现真正的base64编码
-    // 为了简化，暂时返回模拟数据
-    return "base64_encoded_image_data_simulation";
+    // 长度判断
+    if (binary_data.empty()) {
+        return "";
+    }
+
+    static const char* base64_chars = 
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz"
+        "0123456789+/";
+    std::string encoded_data;
+    int val = 0, valb = -6;
+    for (unsigned char c : binary_data) {
+        val = (val << 8) + c;
+        valb += 8;
+        while (valb >= 0) {
+            encoded_data.push_back(base64_chars[(val >> valb) & 0x3F]);
+            valb -= 6;
+        }
+    }
+    if (valb > -6) {
+        encoded_data.push_back(base64_chars[((val << 8) >> valb) & 0x3F]);
+
+        while (encoded_data.size() % 4) {
+            encoded_data.push_back('=');
+        }
+    }
+    return encoded_data;
 }
 
 } // namespace sparkchain

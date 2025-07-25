@@ -15,6 +15,7 @@ set(HTTPLIB_REQUIRE_OPENSSL ON)
 # 包含头文件目录
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/third_party)
+include_directories(/home/c10uds/WorkSpace/software_bei/SparkChain_Linux_SDK_2.0.0_rc1/include)
 
 # 源文件
 set(SOURCES
@@ -61,6 +62,7 @@ target_link_libraries(sparkchain_server
     ${JSONCPP_LIBRARIES}
     ssl
     crypto
+    /home/c10uds/WorkSpace/software_bei/SparkChain_Linux_SDK_2.0.0_rc1/libs/libSparkChain.so
 )
 
 # 编译选项

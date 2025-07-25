@@ -8,12 +8,69 @@
 #include <algorithm>
 #include <mutex>
 
+// SparkChain SDK头文件
+#include "sparkchain.h"
+#include "sc_llm.h"
+
+// SDK配置参数 - 请替换为您的实际参数
+const char* SPARKCHAIN_APPID = "82e7fa93";
+const char* SPARKCHAIN_APIKEY = "891ffce5b4b74fd82c3dbb65203c7614";
+const char* SPARKCHAIN_APISECRET = "ZDc4NjkyMjVhOGRlYWJiYmM3OWM1NDgy";
+const char* SPARKCHAIN_WORKDIR = "./";
+
+// SparkChain回调实现
+class SparkLLMCallbacks : public SparkChain::LLMCallbacks {
+private:
+    std::atomic<bool>* finished_;
+    std::string* result_;
+    std::string* error_;
+    
+public:
+    SparkLLMCallbacks(std::atomic<bool>* finished, std::string* result, std::string* error)
+        : finished_(finished), result_(result), error_(error) {}
+    
+    void onLLMResult(SparkChain::LLMResult* result, void* usrContext) override {
+        if (result->getContentType() == SparkChain::LLMResult::TEXT) {
+            const char* content = result->getContent();
+            int status = result->getStatus();
+            
+            if (content) {
+                *result_ += content;
+            }
+            
+            if (status == 2) { // 最终帧
+                *finished_ = true;
+            }
+        }
+    }
+    
+    void onLLMEvent(SparkChain::LLMEvent* event, void* usrContext) override {
+        // 处理事件，如果需要的话
+    }
+    
+    void onLLMError(SparkChain::LLMError* error, void* usrContext) override {
+        int errCode = error->getErrCode();
+        const char* errMsg = error->getErrMsg();
+        
+        *error_ = "LLM Error: Code=" + std::to_string(errCode) + ", Message=" + std::string(errMsg ? errMsg : "Unknown error");
+        *finished_ = true;
+    }
+};
+
 namespace sparkchain {
+
+// SDK配置参数 - 请替换为您的实际参数
+const char* LlmService::APPID = SPARKCHAIN_APPID;
+const char* LlmService::APIKEY = SPARKCHAIN_APIKEY;
+const char* LlmService::APISECRET = SPARKCHAIN_APISECRET;
+const char* LlmService::WORKDIR = SPARKCHAIN_WORKDIR;
 
 LlmService::LlmService() 
     : is_initialized_(false)
+    , sdk_initialized_(false)
     , model_path_("./models/llm")
-    , config_path_("./config/llm_config.json") {
+    , config_path_("./config/llm_config.json")
+    , async_finished_(false) {
 }
 
 LlmService::~LlmService() {
@@ -28,9 +85,15 @@ bool LlmService::initialize() {
     try {
         LOG_INFO("初始化LLM服务...");
         
+        // 初始化SparkChain SDK
+        if (!init_sparkchain_sdk()) {
+            LOG_ERROR("SparkChain SDK初始化失败");
+            return false;
+        }
+        
         // 检查模型文件
         if (!FileUtils::exists(model_path_)) {
-            LOG_WARN_F("LLM模型路径不存在: %s, 使用模拟模式", model_path_.c_str());
+            LOG_WARN_F("LLM模型路径不存在: %s, 使用SDK默认配置", model_path_.c_str());
         }
         
         // 加载配置
@@ -39,10 +102,10 @@ bool LlmService::initialize() {
         }
         
         // 初始化模型配置
-        model_configs_["spark"] = "spark_model_config";
-        model_configs_["gpt"] = "gpt_model_config";
-        model_configs_["claude"] = "claude_model_config";
-        model_configs_["llama"] = "llama_model_config";
+        model_configs_["spark"] = "4.0Ultra";
+        model_configs_["gpt"] = "4.0Ultra";  // 使用星火作为后端
+        model_configs_["claude"] = "4.0Ultra";
+        model_configs_["llama"] = "4.0Ultra";
         
         is_initialized_ = true;
         LOG_INFO("LLM服务初始化完成");
@@ -58,8 +121,13 @@ void LlmService::cleanup() {
     if (is_initialized_) {
         LOG_INFO("清理LLM服务资源...");
         
-        std::lock_guard<std::mutex> lock(history_mutex_);
-        chat_histories_.clear();
+        {
+            std::lock_guard<std::mutex> lock(history_mutex_);
+            chat_histories_.clear();
+        }
+        
+        // 清理SparkChain SDK
+        cleanup_sparkchain_sdk();
         
         is_initialized_ = false;
     }
@@ -115,58 +183,64 @@ LlmResponse LlmService::process_chat_request(const std::string& question,
                                            const std::string& chat_id) {
     LlmResponse response;
     
-    // 模拟LLM处理时间
-    std::this_thread::sleep_for(std::chrono::milliseconds(800));
-    
-    // 获取对话历史
-    auto history = get_chat_history(chat_id);
-    
-    // 这里应该调用实际的LLM引擎（如科大讯飞星火、OpenAI GPT等）
-    // 目前使用模拟实现
-    std::string answer;
-    
-    // 简单的关键词匹配模拟
-    std::string lower_question = question;
-    std::transform(lower_question.begin(), lower_question.end(), 
-                  lower_question.begin(), ::tolower);
-    
-    if (lower_question.find("面试") != std::string::npos || 
-        lower_question.find("interview") != std::string::npos) {
-        answer = "关于面试，我建议您：\n"
-                "1. 提前准备常见面试问题的回答\n"
-                "2. 了解目标公司的文化和业务\n"
-                "3. 准备一些具体的项目案例\n"
-                "4. 保持自信和积极的态度\n"
-                "5. 准备一些想要问面试官的问题";
-    } else if (lower_question.find("技能") != std::string::npos || 
-               lower_question.find("skill") != std::string::npos) {
-        answer = "技能提升建议：\n"
-                "1. 持续学习新技术和工具\n"
-                "2. 通过实际项目练习\n"
-                "3. 参与开源项目贡献\n"
-                "4. 参加技术社区和会议\n"
-                "5. 定期总结和反思";
-    } else if (lower_question.find("你好") != std::string::npos || 
-               lower_question.find("hello") != std::string::npos) {
-        answer = "您好！我是SparkChain智能助手，很高兴为您服务。我可以帮助您进行面试练习、技能评估和职业规划。请告诉我您需要什么帮助？";
-    } else {
-        // 通用回答
-        answer = "感谢您的问题。基于您的询问，我建议您可以从以下几个方面考虑：\n"
-                "1. 明确目标和需求\n"
-                "2. 制定详细的行动计划\n"
-                "3. 持续学习和实践\n"
-                "4. 寻求专业指导和反馈\n"
-                "5. 保持耐心和坚持\n\n"
-                "如果您能提供更多具体信息，我可以给出更有针对性的建议。";
+    try {
+        if (!sdk_initialized_) {
+            throw std::runtime_error("SparkChain SDK not initialized");
+        }
+        
+        // 获取对话历史
+        auto history = get_chat_history(chat_id);
+        
+        // 创建LLM实例
+        SparkChain::LLM* llm = create_llm_instance("4.0Ultra");
+        if (!llm) {
+            throw std::runtime_error("Failed to create LLM instance");
+        }
+        
+        // 使用同步调用方式
+        LOG_INFO_F("调用SparkChain LLM, 问题: %s", question.c_str());
+        
+        SparkChain::LLMSyncOutput* result = llm->run(question.c_str(), 60); // 60秒超时
+        if (!result) {
+            SparkChain::LLMFactory::destroy(llm);
+            throw std::runtime_error("LLM run failed - no result");
+        }
+        
+        // 获取结果
+        int errCode = result->getErrCode();
+        if (errCode != 0) {
+            const char* errMsg = result->getErrMsg();
+            SparkChain::LLMFactory::destroy(llm);
+            throw std::runtime_error("LLM error: " + std::string(errMsg ? errMsg : "Unknown error"));
+        }
+        
+        const char* content = result->getContent();
+        if (content) {
+            response.answer = content;
+            response.success = true;
+            
+            // 获取Token信息
+            response.completion_tokens = result->getCompletionTokens();
+            response.prompt_tokens = result->getPromptTokens();
+            response.total_tokens = result->getTotalTokens();
+        } else {
+            throw std::runtime_error("No content in LLM response");
+        }
+        
+        // 清理资源
+        SparkChain::LLMFactory::destroy(llm);
+        
+        LOG_INFO_F("LLM对话完成, 回答长度: %zu, 使用Token: %d", 
+                  response.answer.length(), response.total_tokens);
+        
+    } catch (const std::exception& e) {
+        LOG_ERROR_F("SparkChain LLM调用失败: %s", e.what());
+        response.success = false;
+        response.error = e.what();
+        
+        // 如果实际LLM调用失败，提供一个基础的回答
+        response.answer = "抱歉，我现在无法处理您的请求。请稍后再试。错误信息：" + std::string(e.what());
     }
-    
-    // 后处理答案
-    answer = postprocess_answer(answer);
-    
-    response.success = true;
-    response.answer = answer;
-    
-    LOG_INFO_F("LLM对话完成, 回答长度: %zu", response.answer.length());
     
     return response;
 }
@@ -240,6 +314,79 @@ std::string LlmService::generate_chat_id() {
     std::uniform_int_distribution<> dis(1000, 9999);
     
     return "chat_" + std::to_string(timestamp) + "_" + std::to_string(dis(gen));
+}
+
+bool LlmService::init_sparkchain_sdk() {
+    std::lock_guard<std::mutex> lock(sdk_mutex_);
+    
+    if (sdk_initialized_) {
+        return true;
+    }
+    
+    try {
+        LOG_INFO("初始化SparkChain SDK...");
+        
+        SparkChain::SparkChainConfig* config = SparkChain::SparkChainConfig::builder();
+        config->appID(APPID)
+              ->apiKey(APIKEY)
+              ->apiSecret(APISECRET)
+              ->workDir(WORKDIR)
+              ->logLevel(100); // 关闭详细日志
+        
+        int ret = SparkChain::init(config);
+        if (ret != 0) {
+            LOG_ERROR_F("SparkChain SDK初始化失败, 错误码: %d", ret);
+            return false;
+        }
+        
+        sdk_initialized_ = true;
+        LOG_INFO("SparkChain SDK初始化成功");
+        return true;
+        
+    } catch (const std::exception& e) {
+        LOG_ERROR_F("SparkChain SDK初始化异常: %s", e.what());
+        return false;
+    }
+}
+
+void LlmService::cleanup_sparkchain_sdk() {
+    std::lock_guard<std::mutex> lock(sdk_mutex_);
+    
+    if (sdk_initialized_) {
+        LOG_INFO("清理SparkChain SDK...");
+        
+        // 释放LLM实例
+        llm_instance_.reset();
+        
+        // 清理SDK
+        SparkChain::unInit();
+        sdk_initialized_ = false;
+        
+        LOG_INFO("SparkChain SDK已清理");
+    }
+}
+
+SparkChain::LLM* LlmService::create_llm_instance(const std::string& model) {
+    try {
+        SparkChain::LLMConfig* llmConfig = SparkChain::LLMConfig::builder();
+        llmConfig->domain(model.c_str()); // 使用指定的模型版本
+        
+        // 创建带历史记忆的LLM实例（保持5轮对话上下文）
+        SparkChain::Memory* memory = SparkChain::Memory::WindowMemory(5);
+        SparkChain::LLM* llm = SparkChain::LLMFactory::textGeneration(llmConfig, memory);
+        
+        if (!llm) {
+            LOG_ERROR("创建LLM实例失败");
+            return nullptr;
+        }
+        
+        LOG_DEBUG_F("创建LLM实例成功, 模型: %s", model.c_str());
+        return llm;
+        
+    } catch (const std::exception& e) {
+        LOG_ERROR_F("创建LLM实例异常: %s", e.what());
+        return nullptr;
+    }
 }
 
 } // namespace sparkchain

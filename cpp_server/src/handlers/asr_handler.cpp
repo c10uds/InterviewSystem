@@ -101,7 +101,7 @@ bool AsrHandler::validate_asr_request(const AsrRequest& request) {
     }
     
     // 检查支持的音频格式
-    if (request.format != "wav" && request.format != "mp3" && request.format != "m4a") {
+    if (request.format != "wav" && request.format != "mp3" && request.format != "m4a" && request.format != "pcm") {
         LOG_WARN_F("ASR请求验证失败: 不支持的音频格式 %s", request.format.c_str());
         return false;
     }

@@ -74,6 +74,11 @@ struct LlmResponse {
     std::string answer;
     std::string chat_id;
     std::string error;
+    
+    // Token使用信息
+    int completion_tokens = 0;  // 回答Token数量
+    int prompt_tokens = 0;      // 问题Token数量
+    int total_tokens = 0;       // 总Token数量
 };
 
 // 健康检查响应

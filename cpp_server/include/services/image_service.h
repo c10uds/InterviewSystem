@@ -3,7 +3,15 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include <mutex>
+#include <atomic>
 #include "common/types.h"
+
+// SparkChain SDK前向声明
+namespace SparkChain {
+    class LLM;
+    class LLMCallbacks;
+}
 
 namespace sparkchain {
 
@@ -54,6 +62,26 @@ private:
     // 获取图像尺寸
     std::pair<int, int> get_image_dimensions(const std::string& image_data);
     
+    // SparkChain图像理解功能
+    std::string analyze_image_with_llm(const std::string& image_data, const std::string& question);
+    std::string analyze_interview_scene(const std::string& image_data);
+    std::string analyze_facial_expressions(const std::string& image_data);
+    
+    // SparkChain SDK相关方法
+    bool init_sparkchain_image_sdk();
+    void cleanup_sparkchain_image_sdk();
+    SparkChain::LLM* create_image_llm_instance();
+    
+    // LLM结果解析方法
+    std::vector<FaceInfo> parse_llm_face_analysis(const std::string& llm_result);
+    ImageRecognitionResponse::InterviewAnalysis parse_llm_interview_analysis(const std::string& llm_result);
+    
+    // SDK配置参数（使用已有的配置）
+    static const char* APPID;
+    static const char* APIKEY;
+    static const char* APISECRET;
+    static const char* WORKDIR;
+    
     // 模拟人脸检测（用于演示）
     std::vector<FaceInfo> simulate_face_detection(int image_width, int image_height);
     
@@ -65,8 +93,11 @@ private:
 
 private:
     bool is_initialized_;
+    bool sdk_initialized_;
     std::string model_path_;
     std::string config_path_;
+    std::mutex sdk_mutex_;
+    std::atomic<bool> llm_finished_;
     
     // 支持的图像格式
     std::vector<std::string> supported_formats_;

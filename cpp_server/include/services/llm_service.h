@@ -5,7 +5,19 @@
 #include <unordered_map>
 #include <vector>
 #include <mutex>
+#include <atomic>
 #include "common/types.h"
+
+// 前向声明SparkChain类，避免头文件依赖
+namespace SparkChain {
+    class LLM;
+    class LLMConfig;
+    class Memory;
+    class LLMCallbacks;
+    class LLMResult;
+    class LLMEvent;
+    class LLMError;
+}
 
 namespace sparkchain {
 
@@ -48,11 +60,26 @@ private:
     
     // 生成唯一的会话ID
     std::string generate_chat_id();
+    
+    // SparkChain SDK相关方法
+    bool init_sparkchain_sdk();
+    void cleanup_sparkchain_sdk();
+    SparkChain::LLM* create_llm_instance(const std::string& model = "4.0Ultra");
+    
+    // SDK配置参数
+    static const char* APPID;
+    static const char* APIKEY;
+    static const char* APISECRET;
+    static const char* WORKDIR;
 
 private:
     bool is_initialized_;
+    bool sdk_initialized_;
     std::string model_path_;
     std::string config_path_;
+    
+    // SparkChain LLM实例
+    std::unique_ptr<SparkChain::LLM> llm_instance_;
     
     // 会话历史存储 (chat_id -> history)
     std::unordered_map<std::string, 
@@ -63,6 +90,12 @@ private:
     
     // 互斥锁保护共享资源
     mutable std::mutex history_mutex_;
+    mutable std::mutex sdk_mutex_;
+    
+    // 异步调用状态管理
+    std::atomic<bool> async_finished_;
+    std::string async_result_;
+    std::string async_error_;
 };
 
 } // namespace sparkchain

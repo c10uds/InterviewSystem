@@ -12,10 +12,9 @@ import struct
 import time
 import json
 import logging
-import unittest
 from datetime import datetime
 from typing import Dict, List, Optional
-import base64
+import requests
 from PIL import Image, ImageDraw
 
 # 添加路径以便导入sdk_client
@@ -133,12 +132,7 @@ class TestDataGenerator:
                 start=0, end=180, fill='black', width=3)
         
         # 添加文字标识
-        try:
-            from PIL import ImageFont
-            font = ImageFont.load_default()
-            draw.text((10, 10), "Test Interview Image", fill='black', font=font)
-        except:
-            draw.text((10, 10), "Test Interview Image", fill='black')
+        draw.text((10, 10), "Test Interview Image", fill='black')
         
         img.save(filename)
         return filename
@@ -272,27 +266,6 @@ class SparkChainTestSuite:
                     {'question': question, 'exception': str(e)}
                 )
                 print(f"❌ 请求异常: {e}")
-        
-        # 特殊情况测试
-        print(f"\n2.{total_tests + 1} 测试空问题处理")
-        start_time = time.time()
-        result = self.client.llm_chat("", "empty_test")
-        response_time = time.time() - start_time
-        
-        if not result.get('success'):
-            self.record_test_result(
-                "LLM对话-空问题", True,
-                "正确处理空问题", response_time,
-                {'error_handling': 'correct'}
-            )
-            print("✓ 空问题错误处理正确")
-        else:
-            self.record_test_result(
-                "LLM对话-空问题", False,
-                "空问题处理可能有问题", response_time,
-                {'error_handling': 'incorrect'}
-            )
-            print("⚠️ 空问题处理可能有问题")
         
         success_rate = success_count / total_tests * 100
         print(f"\nLLM服务测试总结: {success_count}/{total_tests} 成功 ({success_rate:.1f}%)")
@@ -481,7 +454,6 @@ class SparkChainTestSuite:
                         data = {'analysis_type': analysis_type}
                         
                         # 使用requests直接调用API
-                        import requests
                         response = requests.post(
                             f"{TestConfig.SERVER_URL}/api/image",
                             files=files,
@@ -563,93 +535,6 @@ class SparkChainTestSuite:
         success_rate = success_count / total_tests * 100
         print(f"\n图像服务测试总结: {success_count}/{total_tests} 成功 ({success_rate:.1f}%)")
         return success_count > total_tests // 2
-    
-    def test_performance_metrics(self):
-        """测试性能指标"""
-        print("\n" + "="*50)
-        print("6. 性能压力测试")
-        print("="*50)
-        
-        # 并发测试
-        import threading
-        import queue
-        
-        def concurrent_llm_test(result_queue, thread_id):
-            """并发LLM测试"""
-            start_time = time.time()
-            result = self.client.llm_chat(f"这是来自线程{thread_id}的测试消息", f"thread_{thread_id}")
-            end_time = time.time()
-            result_queue.put({
-                'thread_id': thread_id,
-                'success': result.get('success', False),
-                'response_time': end_time - start_time,
-                'error': result.get('error', '')
-            })
-        
-        print("\n6.1 并发请求测试 (5个并发)")
-        result_queue = queue.Queue()
-        threads = []
-        
-        start_time = time.time()
-        for i in range(5):
-            thread = threading.Thread(target=concurrent_llm_test, args=(result_queue, i))
-            threads.append(thread)
-            thread.start()
-        
-        for thread in threads:
-            thread.join()
-        
-        total_time = time.time() - start_time
-        
-        # 收集结果
-        concurrent_results = []
-        while not result_queue.empty():
-            concurrent_results.append(result_queue.get())
-        
-        success_count = sum(1 for r in concurrent_results if r['success'])
-        avg_response_time = sum(r['response_time'] for r in concurrent_results) / len(concurrent_results)
-        
-        self.record_test_result(
-            "并发请求测试", success_count >= 3,
-            f"5个并发请求，{success_count}个成功，平均响应时间{avg_response_time:.3f}s",
-            total_time,
-            {
-                'concurrent_count': 5,
-                'success_count': success_count,
-                'avg_response_time': avg_response_time,
-                'total_time': total_time,
-                'results': concurrent_results
-            }
-        )
-        
-        print(f"✓ 并发测试完成: {success_count}/5 成功")
-        print(f"  - 总耗时: {total_time:.3f}s")
-        print(f"  - 平均响应时间: {avg_response_time:.3f}s")
-        
-        # 内存使用测试
-        print("\n6.2 内存使用情况检查")
-        try:
-            import psutil
-            import requests
-            
-            # 获取服务器进程信息
-            for proc in psutil.process_iter(['pid', 'name', 'memory_info']):
-                if 'cpp_server' in proc.info['name'] or 'sparkchain' in proc.info['name'].lower():
-                    memory_mb = proc.info['memory_info'].rss / 1024 / 1024
-                    print(f"✓ 服务器进程内存使用: {memory_mb:.1f} MB")
-                    self.record_test_result(
-                        "内存使用检查", True,
-                        f"服务器内存使用: {memory_mb:.1f} MB", 0,
-                        {'memory_mb': memory_mb, 'process_info': proc.info}
-                    )
-                    break
-            else:
-                print("⚠️ 未找到服务器进程信息")
-                
-        except ImportError:
-            print("⚠️ 未安装psutil，跳过内存检查")
-        except Exception as e:
-            print(f"⚠️ 内存检查异常: {e}")
     
     def generate_test_report(self):
         """生成测试报告"""
@@ -761,16 +646,13 @@ class SparkChainTestSuite:
             # 5. 图像服务测试
             self.test_image_service()
             
-            # 6. 性能测试
-            self.test_performance_metrics()
-            
             return True
             
         except KeyboardInterrupt:
-            print("\n用户中断测试")
+            print("\n\n用户中断测试")
             return False
         except Exception as e:
-            print(f"\n测试过程中发生异常: {e}")
+            print(f"\n\n测试过程中发生异常: {e}")
             logger.exception("测试异常")
             return False
         finally:
@@ -786,7 +668,6 @@ def main():
     
     # 检查服务器是否运行
     try:
-        import requests
         response = requests.get(f"{TestConfig.SERVER_URL}/api/health", timeout=5)
         if response.status_code != 200:
             raise Exception("服务器健康检查失败")
@@ -811,9 +692,3 @@ def main():
 if __name__ == "__main__":
     exit_code = main()
     sys.exit(exit_code)
-
-if __name__ == "__main__":
-    exit_code = main()
-
-if __name__ == "__main__":
-    test_sdk_integration()

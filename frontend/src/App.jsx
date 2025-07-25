@@ -106,7 +106,7 @@ function App() {
   const [avatarUrl, setAvatarUrl] = useState(null);
   const handleAvatarChange = e => {
     const file = e.target.files[0];
-    if (file && (file.type === 'image/png' || file.type === 'image/jpeg')) {
+    if (file && (file.type === 'image/2png' || file.type === 'image/jpeg')) {
       const url = URL.createObjectURL(file);
       setAvatarUrl(url);
     } else {
@@ -121,6 +121,23 @@ function App() {
   const [userAnswers, setUserAnswers] = useState([]);
   const [interviewLoading, setInterviewLoading] = useState(false);
   const [interviewFinished, setInterviewFinished] = useState(false);
+
+  useEffect(() => {
+    if (loggedIn) {
+      axios.get('/api/positions', {
+        headers: { Authorization: localStorage.getItem('token') }
+      }).then(res => {
+        console.log('positions接口返回数据:', res.data);
+        if (res.data && Array.isArray(res.data.positions)) {
+          setPositions(res.data.positions);
+        } else {
+          console.log('positions数据格式不正确:', res.data);
+        }
+      }).catch(err => {
+        console.error('positions接口请求失败:', err);
+      });
+    }
+  }, [loggedIn]);
 
   // 侧边栏tab切换函数，防止未定义报错
   function handleTabChange(tab) {
@@ -276,7 +293,7 @@ function App() {
     message.success('已登出');
   };
 
-  // 开始面试，获取AI题目
+  // 开始面试，获取AI题目（3个）
   const handleStartInterview = async () => {
     if (!position) {
       message.warning('请先选择岗位');
@@ -285,12 +302,13 @@ function App() {
     setInterviewLoading(true);
     try {
       const res = await axios.post('/api/ai_questions', { position }, { headers: { Authorization: localStorage.getItem('token') } });
-      if (res.data.success) {
+      if (res.data.success && Array.isArray(res.data.questions) && res.data.questions.length > 0) {
         setAiQuestions(res.data.questions);
         setInterviewStarted(true);
         setCurrentQuestionIdx(0);
         setUserAnswers([]);
         setInterviewFinished(false);
+        setSessionId(res.data.session_id); // 新增保存session_id
       } else {
         message.error(res.data.msg || '获取题目失败');
       }
@@ -303,46 +321,54 @@ function App() {
   // 提交当前题目答案，获取下一个题目或结束
   const handleNextQuestion = async () => {
     const answerText = text;
+    const currentQ = aiQuestions[currentQuestionIdx];
+    console.log('handleNextQuestion', {
+      sessionId,
+      currentQuestionIdx,
+      aiQuestions,
+      question: currentQ,
+      answer: answerText
+    });
     if (!answerText && !audio) {
       message.warning('请作答后再提交');
       return;
     }
-    // 保存音频
+    if (!sessionId || !currentQ) {
+      message.error('会话异常，请刷新页面重试');
+      return;
+    }
     let audioFile = audio;
     let audioUrlLocal = audioUrl;
-    setUserAnswers(prev => [...prev, { text: answerText, audio: audioFile, audioUrl: audioUrlLocal }]);
+    const newAnswers = [...userAnswers, { text: answerText, audio: audioFile, audioUrl: audioUrlLocal }];
+    setUserAnswers(newAnswers);
     setText('');
     setAudio(null);
     setAudioUrl(null);
     setRecording(false);
-    if (currentQuestionIdx < 9) {
-      setCurrentQuestionIdx(currentQuestionIdx + 1);
-    } else {
-      // 十轮结束，提交所有数据到后端评测
-      setInterviewLoading(true);
-      try {
-        const formData = new FormData();
-        formData.append('position', position);
-        formData.append('questions', JSON.stringify(aiQuestions));
-        formData.append('answers', JSON.stringify(userAnswers.map(a => a.text)));
-        userAnswers.forEach((a, i) => {
-          if (a.audio) formData.append('audios', a.audio, `answer${i+1}.webm`);
-        });
-        if (audio) formData.append('audios', audio, `answer${userAnswers.length+1}.webm`);
-        const res = await axios.post('/api/ai_evaluate', formData, { headers: { Authorization: localStorage.getItem('token') } });
-        if (res.data.success) {
-          setInterviewFinished(true);
-          message.success('面试评测已完成，结果已保存');
-        } else {
-          message.error(res.data.msg || '评测失败');
-        }
-      } catch {
-        message.error('评测失败');
+    setInterviewLoading(true);
+    try {
+      const res = await axios.post('/api/ai_next_question', {
+        session_id: sessionId,
+        question: currentQ,
+        answer: answerText
+      }, { headers: { Authorization: localStorage.getItem('token') } });
+      if (res.data.success && Array.isArray(res.data.questions) && res.data.questions.length > 0) {
+        setAiQuestions(prev => [...prev, ...res.data.questions]);
+        setCurrentQuestionIdx(idx => idx + 1);
+      } else {
+        setInterviewFinished(true);
+        setInterviewStarted(false);
+        message.success('面试已完成，结果已保存');
       }
-      setInterviewLoading(false);
-      setInterviewStarted(false);
+    } catch (e) {
+      message.error('获取新题目失败');
+      console.error('handleNextQuestion error', e);
     }
+    setInterviewLoading(false);
   };
+
+  // 新增：sessionId状态
+  const [sessionId, setSessionId] = useState(null);
 
   // 顶部横栏内容根据页面动态变化
   const getTopBarTitle = () => {

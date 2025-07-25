@@ -6,13 +6,72 @@
 #include <thread>
 #include <chrono>
 #include <algorithm>
+#include <atomic>
+
+// SparkChain SDK头文件
+#include "sparkchain.h"
+
+// 使用LLM服务中已定义的SDK配置参数
+extern const char* SPARKCHAIN_APPID;
+extern const char* SPARKCHAIN_APIKEY;
+extern const char* SPARKCHAIN_APISECRET;
+extern const char* SPARKCHAIN_WORKDIR;
+
+// SparkChain图像理解回调实现
+class SparkImageLLMCallbacks : public SparkChain::LLMCallbacks {
+private:
+    std::atomic<bool>* finished_;
+    std::string* result_;
+    std::string* error_;
+    
+public:
+    SparkImageLLMCallbacks(std::atomic<bool>* finished, std::string* result, std::string* error)
+        : finished_(finished), result_(result), error_(error) {}
+    
+    void onLLMResult(SparkChain::LLMResult* result, void* usrContext) override {
+        if (result) {
+            const char* content = result->getContent();
+            int status = result->getStatus();
+            
+            if (content) {
+                *result_ += content;
+            }
+            
+            if (status == 2) { // 最终帧
+                *finished_ = true;
+            }
+        }
+    }
+    
+    void onLLMEvent(SparkChain::LLMEvent* event, void* usrContext) override {
+        // 处理事件，如果需要的话
+    }
+    
+    void onLLMError(SparkChain::LLMError* error, void* usrContext) override {
+        if (error) {
+            int errCode = error->getErrCode();
+            const char* errMsg = error->getErrMsg();
+            
+            *error_ = "Image LLM Error: Code=" + std::to_string(errCode) + ", Message=" + std::string(errMsg ? errMsg : "Unknown error");
+            *finished_ = true;
+        }
+    }
+};
 
 namespace sparkchain {
 
+// SDK配置参数 - 使用已定义的配置
+const char* ImageService::APPID = SPARKCHAIN_APPID;
+const char* ImageService::APIKEY = SPARKCHAIN_APIKEY;
+const char* ImageService::APISECRET = SPARKCHAIN_APISECRET;
+const char* ImageService::WORKDIR = SPARKCHAIN_WORKDIR;
+
 ImageService::ImageService() 
     : is_initialized_(false)
+    , sdk_initialized_(false)
     , model_path_("./models/image")
-    , config_path_("./config/image_config.json") {
+    , config_path_("./config/image_config.json")
+    , llm_finished_(false) {
     
     // 初始化支持的图像格式
     supported_formats_ = {"jpg", "jpeg", "png", "bmp", "webp"};
@@ -42,6 +101,11 @@ bool ImageService::initialize() {
     try {
         LOG_INFO("初始化图像识别服务...");
         
+        // 初始化SparkChain图像理解SDK
+        if (!init_sparkchain_image_sdk()) {
+            LOG_WARN("SparkChain图像理解SDK初始化失败，将使用模拟模式");
+        }
+        
         // 检查模型文件
         if (!FileUtils::exists(model_path_)) {
             LOG_WARN_F("图像模型路径不存在: %s, 使用模拟模式", model_path_.c_str());
@@ -65,6 +129,7 @@ bool ImageService::initialize() {
 void ImageService::cleanup() {
     if (is_initialized_) {
         LOG_INFO("清理图像识别服务资源...");
+        cleanup_sparkchain_image_sdk();
         is_initialized_ = false;
     }
 }
@@ -125,14 +190,40 @@ ImageRecognitionResponse ImageService::process_image_recognition(const std::stri
     response.image_height = dimensions.second;
     response.image_format = request.format;
     
-    // 人脸检测
-    if (request.detect_faces) {
+    // 使用SparkChain进行图像理解分析
+    if (sdk_initialized_ && request.analysis_mode == "interview") {
+        try {
+            LOG_INFO("使用SparkChain LLM进行面试场景分析");
+            
+            // 分析面试场景
+            std::string scene_analysis = analyze_interview_scene(image_data);
+            
+            // 分析面部表情
+            std::string expression_analysis = analyze_facial_expressions(image_data);
+            
+            // 解析LLM分析结果并转换为结构化数据
+            response.faces = parse_llm_face_analysis(expression_analysis);
+            response.interview_analysis = parse_llm_interview_analysis(scene_analysis);
+            
+            LOG_INFO_F("SparkChain图像分析完成, 分析结果长度: %zu", scene_analysis.length());
+            
+        } catch (const std::exception& e) {
+            LOG_WARN_F("SparkChain图像分析失败: %s, 回退到模拟模式", e.what());
+            // 回退到原有的模拟模式
+            response.faces = detect_faces(processed_image);
+        }
+    } else {
+        // 使用原有的模拟模式进行人脸检测
         response.faces = detect_faces(processed_image);
-        
-        // 为每个人脸分析情绪
-        if (request.analyze_emotion) {
-            for (auto& face : response.faces) {
+    }
+    
+    // 为每个人脸分析情绪（如果请求了）
+    if (request.analyze_emotion && !response.faces.empty()) {
+        for (auto& face : response.faces) {
+            if (face.emotion.empty()) {
                 face.emotion = analyze_emotion(face, processed_image);
+            }
+            if (face.emotion_score == 0.0) {
                 face.emotion_score = calculate_emotion_score(face.emotion);
             }
         }
@@ -143,8 +234,8 @@ ImageRecognitionResponse ImageService::process_image_recognition(const std::stri
         response.micro_expressions = analyze_micro_expressions(response.faces, processed_image);
     }
     
-    // 面试相关分析
-    if (request.analysis_mode == "interview") {
+    // 如果还没有面试分析结果，使用传统方法
+    if (request.analysis_mode == "interview" && response.interview_analysis.overall_impression.empty()) {
         response.interview_analysis = analyze_interview_performance(response.faces, response.micro_expressions);
     }
     
@@ -383,6 +474,238 @@ std::pair<int, int> ImageService::get_image_dimensions(const std::string& image_
     std::uniform_int_distribution<> height_dis(480, 1080);
     
     return std::make_pair(width_dis(gen), height_dis(gen));
+}
+
+// SparkChain图像理解功能实现
+std::string ImageService::analyze_image_with_llm(const std::string& image_data, const std::string& question) {
+    if (!sdk_initialized_) {
+        return "SDK未初始化";
+    }
+    
+    try {
+        LOG_INFO_F("调用SparkChain图像理解LLM, 问题: %s", question.c_str());
+        
+        // 重置标志
+        llm_finished_ = false;
+        std::string result;
+        std::string error_msg;
+        
+        // 创建图像理解LLM实例
+        SparkChain::LLM* llm = create_image_llm_instance();
+        if (!llm) {
+            return "创建LLM实例失败";
+        }
+        
+        // 创建回调实例
+        SparkImageLLMCallbacks callbacks(&llm_finished_, &result, &error_msg);
+        llm->registerLLMCallbacks(&callbacks);
+        
+        // 执行图像理解
+        llm->arun(question.c_str(), const_cast<char*>(image_data.data()), image_data.size());
+        
+        // 等待结果（最多等待30秒）
+        int wait_times = 0;
+        while (!llm_finished_ && wait_times < 300) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            wait_times++;
+        }
+        
+        // 清理LLM实例
+        SparkChain::LLM::destroy(llm);
+        
+        if (!llm_finished_) {
+            return "图像理解超时";
+        }
+        
+        if (!error_msg.empty()) {
+            return "图像理解错误: " + error_msg;
+        }
+        
+        return result;
+        
+    } catch (const std::exception& e) {
+        LOG_ERROR_F("SparkChain图像理解异常: %s", e.what());
+        return "图像理解异常: " + std::string(e.what());
+    }
+}
+
+std::string ImageService::analyze_interview_scene(const std::string& image_data) {
+    std::string question = "请分析这张面试场景图片，从以下几个方面进行评估：\n"
+                          "1. 面试者的整体形象和着装是否得体\n"
+                          "2. 面试者的坐姿和肢体语言\n"
+                          "3. 面试者的注意力集中程度\n"
+                          "4. 面试者的自信程度表现\n"
+                          "5. 面试者的紧张或放松状态\n"
+                          "6. 整体面试表现评分（1-10分）\n"
+                          "请给出详细分析和改进建议。";
+    
+    return analyze_image_with_llm(image_data, question);
+}
+
+std::string ImageService::analyze_facial_expressions(const std::string& image_data) {
+    std::string question = "请分析这张图片中人物的面部表情，包括：\n"
+                          "1. 基本情绪（快乐、悲伤、愤怒、惊讶、恐惧、厌恶、中性）\n"
+                          "2. 面部肌肉紧张程度\n"
+                          "3. 眼神表现（专注、游移、自信等）\n"
+                          "4. 微表情特征（如微笑、皱眉、眨眼等）\n"
+                          "5. 整体表情给人的印象\n"
+                          "请详细描述观察到的面部表情特征。";
+    
+    return analyze_image_with_llm(image_data, question);
+}
+
+// 解析LLM分析结果的辅助方法
+std::vector<FaceInfo> ImageService::parse_llm_face_analysis(const std::string& llm_result) {
+    std::vector<FaceInfo> faces;
+    
+    // 基于LLM结果创建一个人脸信息（简化实现）
+    if (!llm_result.empty() && llm_result.find("未检测到人脸") == std::string::npos) {
+        FaceInfo face;
+        face.x = 100;
+        face.y = 100;
+        face.width = 200;
+        face.height = 200;
+        face.confidence = 0.95;
+        face.gender = "unknown";
+        face.age = 30;
+        
+        // 从LLM结果中提取情绪信息
+        if (llm_result.find("快乐") != std::string::npos || llm_result.find("微笑") != std::string::npos) {
+            face.emotion = "happy";
+            face.emotion_score = 0.9;
+        } else if (llm_result.find("悲伤") != std::string::npos) {
+            face.emotion = "sad";
+            face.emotion_score = 0.8;
+        } else if (llm_result.find("愤怒") != std::string::npos) {
+            face.emotion = "angry";
+            face.emotion_score = 0.8;
+        } else if (llm_result.find("紧张") != std::string::npos) {
+            face.emotion = "nervous";
+            face.emotion_score = 0.8;
+        } else if (llm_result.find("自信") != std::string::npos) {
+            face.emotion = "confident";
+            face.emotion_score = 0.9;
+        } else {
+            face.emotion = "neutral";
+            face.emotion_score = 0.7;
+        }
+        
+        faces.push_back(face);
+    }
+    
+    return faces;
+}
+
+ImageRecognitionResponse::InterviewAnalysis ImageService::parse_llm_interview_analysis(const std::string& llm_result) {
+    ImageRecognitionResponse::InterviewAnalysis analysis;
+    
+    // 基于LLM结果设置分析数据（简化实现）
+    if (llm_result.empty()) {
+        analysis.attention_score = 0.5;
+        analysis.confidence_score = 0.5;
+        analysis.stress_level = 0.5;
+        analysis.engagement_score = 0.5;
+        analysis.overall_impression = "无法分析图像内容";
+        analysis.suggestions = {"请提供清晰的面试图像"};
+        return analysis;
+    }
+    
+    // 从LLM结果中提取评分信息（简化解析）
+    analysis.attention_score = 0.8;
+    analysis.confidence_score = 0.7;
+    analysis.stress_level = 0.3;
+    analysis.engagement_score = 0.8;
+    
+    // 根据LLM内容调整评分
+    if (llm_result.find("自信") != std::string::npos) {
+        analysis.confidence_score = std::min(1.0, analysis.confidence_score + 0.2);
+    }
+    if (llm_result.find("紧张") != std::string::npos) {
+        analysis.stress_level = std::min(1.0, analysis.stress_level + 0.3);
+        analysis.confidence_score = std::max(0.0, analysis.confidence_score - 0.2);
+    }
+    if (llm_result.find("专注") != std::string::npos || llm_result.find("注意力") != std::string::npos) {
+        analysis.attention_score = std::min(1.0, analysis.attention_score + 0.1);
+    }
+    
+    // 设置整体印象（取LLM结果的一部分）
+    analysis.overall_impression = "基于AI视觉分析：" + llm_result.substr(0, 100) + "...";
+    
+    // 生成改进建议
+    analysis.suggestions.clear();
+    if (analysis.confidence_score < 0.7) {
+        analysis.suggestions.push_back("AI建议：增强自信心，保持良好的眼神交流");
+    }
+    if (analysis.stress_level > 0.5) {
+        analysis.suggestions.push_back("AI建议：适当放松，深呼吸调整心态");
+    }
+    if (analysis.attention_score < 0.8) {
+        analysis.suggestions.push_back("AI建议：保持专注，避免分心");
+    }
+    
+    // 添加基于LLM分析的建议
+    analysis.suggestions.push_back("AI分析：" + llm_result.substr(llm_result.length() > 150 ? llm_result.length() - 150 : 0));
+    
+    return analysis;
+}
+
+bool ImageService::init_sparkchain_image_sdk() {
+    std::lock_guard<std::mutex> lock(sdk_mutex_);
+    
+    if (sdk_initialized_) {
+        return true;
+    }
+    
+    try {
+        LOG_INFO("SparkChain图像理解SDK使用LLM服务已初始化的SDK实例");
+        
+        // 不需要再次初始化SDK，因为LLM服务已经初始化过了
+        // SparkChain SDK只能初始化一次，多个服务共享同一个SDK实例
+        
+        sdk_initialized_ = true;
+        LOG_INFO("SparkChain图像理解SDK准备就绪");
+        return true;
+        
+    } catch (const std::exception& e) {
+        LOG_ERROR_F("SparkChain图像理解SDK准备异常: %s", e.what());
+        return false;
+    }
+}
+
+void ImageService::cleanup_sparkchain_image_sdk() {
+    std::lock_guard<std::mutex> lock(sdk_mutex_);
+    
+    if (sdk_initialized_) {
+        LOG_INFO("SparkChain图像理解SDK清理由LLM服务统一管理");
+        
+        // 不需要在这里调用unInit()，因为LLM服务会统一清理SDK
+        sdk_initialized_ = false;
+        
+        LOG_INFO("SparkChain图像理解SDK标记为已清理");
+    }
+}
+
+SparkChain::LLM* ImageService::create_image_llm_instance() {
+    try {
+        SparkChain::LLMConfig* llmConfig = SparkChain::LLMConfig::builder();
+        llmConfig->maxToken(2048); // 设置最大token数
+        
+        // 创建带历史记忆的图像理解LLM实例
+        SparkChain::Memory* memory = SparkChain::Memory::WindowMemory(3);
+        SparkChain::LLM* llm = SparkChain::LLMFactory::imageUnderstanding(llmConfig, memory);
+        
+        if (!llm) {
+            LOG_ERROR("创建图像理解LLM实例失败");
+            return nullptr;
+        }
+        
+        LOG_DEBUG("创建图像理解LLM实例成功");
+        return llm;
+        
+    } catch (const std::exception& e) {
+        LOG_ERROR_F("创建图像理解LLM实例异常: %s", e.what());
+        return nullptr;
+    }
 }
 
 } // namespace sparkchain
