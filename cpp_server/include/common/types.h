@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <memory>
 #include <functional>
+#include <vector>
 
 namespace sparkchain {
 
@@ -81,6 +82,61 @@ struct HealthResponse {
     std::string version;
     std::string timestamp;
     std::string uptime;
+};
+
+// 人脸信息结构
+struct FaceInfo {
+    int x, y, width, height;  // 人脸位置和大小
+    double confidence;        // 检测置信度
+    std::string gender;       // 性别 (male/female)
+    int age;                  // 年龄估计
+    std::string emotion;      // 主要情绪
+    double emotion_score;     // 情绪置信度
+};
+
+// 微表情分析结构
+struct MicroExpressionInfo {
+    std::string expression;   // 微表情类型
+    double intensity;         // 强度 (0.0-1.0)
+    double duration;          // 持续时间(秒)
+    std::string description;  // 描述
+};
+
+// 图像识别请求
+struct ImageRecognitionRequest {
+    std::string image_data;   // 图像数据 (base64编码)
+    std::string format = "jpg"; // 图像格式
+    bool detect_faces = true; // 是否检测人脸
+    bool analyze_emotion = true; // 是否分析情绪
+    bool analyze_micro_expression = false; // 是否分析微表情
+    std::string analysis_mode = "interview"; // 分析模式
+};
+
+// 图像识别响应
+struct ImageRecognitionResponse {
+    bool success;
+    std::string error;
+    
+    // 基础信息
+    int image_width;
+    int image_height;
+    std::string image_format;
+    
+    // 人脸检测结果
+    std::vector<FaceInfo> faces;
+    
+    // 微表情分析结果
+    std::vector<MicroExpressionInfo> micro_expressions;
+    
+    // 面试相关分析
+    struct InterviewAnalysis {
+        double attention_score;     // 专注度评分 (0.0-1.0)
+        double confidence_score;    // 自信度评分 (0.0-1.0)
+        double stress_level;        // 紧张程度 (0.0-1.0)
+        double engagement_score;    // 参与度评分 (0.0-1.0)
+        std::string overall_impression; // 整体印象
+        std::vector<std::string> suggestions; // 改进建议
+    } interview_analysis;
 };
 
 } // namespace sparkchain

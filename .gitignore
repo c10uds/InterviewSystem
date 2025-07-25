@@ -24,3 +24,5 @@ Thumbs.db
 # Others
 *.swp 
 node_modules
+
+migrations/

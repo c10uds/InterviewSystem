@@ -298,38 +298,38 @@ def ai_evaluate():
         asr_data = asr_res.json()
         asr_texts.append(asr_data.get('text', ''))
     #     # 处理视频帧并分析微表情、暂未启用
-    # video = request.files.get('video')
-    # micro_expression_summary = ""
-    # if video:
-    #     video_filename = f"video_{int(datetime.datetime.now().timestamp())}_{video.filename}"
-    #     video_save_path = os.path.join(UPLOAD_FOLDER, video_filename)
-    #     video.save(video_save_path)
-    #     cap = cv2.VideoCapture(video_save_path)
-    #     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    #     fps = cap.get(cv2.CAP_PROP_FPS)
-    #     frames_to_analyze = []
-    #     for i in range(0, frame_count, int(fps)):  # 每秒一帧
-    #         cap.set(cv2.CAP_PROP_POS_FRAMES, i)
-    #         ret, frame = cap.read()
-    #         if ret:
-    #             _, buffer = cv2.imencode('.jpg', frame)
-    #             img_b64 = base64.b64encode(buffer).decode('utf-8')
-    #             frames_to_analyze.append(img_b64)
-    #     cap.release()
-    #     # 构造prompt并发送到/api/llm
-    #     micro_prompt = (
-    #         "请分析以下面试视频帧中的应聘者微表情，判断其情绪状态、紧张程度、自信度等，并给出面试表现建议。"
-    #         "图片已按顺序base64编码，图片内容为面试者面部特写。"
-    #         "请用简洁的中文总结整体微表情表现和建议。"
-    #     )
-    #     llm_payload = {
-    #         "question": micro_prompt,
-    #         "images": frames_to_analyze,
-    #         "model": "spark"
-    #     }
-    #     llm_res = requests.post(f'{AI_BASE_URL}/api/llm', json=llm_payload)
-    #     llm_data = llm_res.json()
-    #     micro_expression_summary = llm_data.get('answer', '')
+    video = request.files.get('video')
+    micro_expression_summary = ""
+    if video:
+        video_filename = f"video_{int(datetime.datetime.now().timestamp())}_{video.filename}"
+        video_save_path = os.path.join(UPLOAD_FOLDER, video_filename)
+        video.save(video_save_path)
+        cap = cv2.VideoCapture(video_save_path)
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frames_to_analyze = []
+        for i in range(0, frame_count, int(fps)):  # 每秒一帧
+            cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+            ret, frame = cap.read()
+            if ret:
+                _, buffer = cv2.imencode('.jpg', frame)
+                img_b64 = base64.b64encode(buffer).decode('utf-8')
+                frames_to_analyze.append(img_b64)
+        cap.release()
+        # 构造prompt并发送到/api/llm
+        micro_prompt = (
+            "请分析以下面试视频帧中的应聘者微表情，判断其情绪状态、紧张程度、自信度等，并给出面试表现建议。"
+            "图片已按顺序base64编码，图片内容为面试者面部特写。"
+            "请用简洁的中文总结整体微表情表现和建议。"
+        )
+        llm_payload = {
+            "question": micro_prompt,
+            "images": frames_to_analyze,
+            "model": "spark"
+        }
+        llm_res = requests.post(f'{AI_BASE_URL}/api/llm', json=llm_payload)
+        llm_data = llm_res.json()
+        micro_expression_summary = llm_data.get('answer', '')
     # 多模态评测
     eval_prompt = f"请根据以下面试问题和回答还有微表情分析结果，从专业知识水平、技能匹配度、语言表达能力、逻辑思维能力、创新能力、应变抗压能力六个维度，量化评测并给出建议：\n"
     for i, (q, a, t) in enumerate(zip(questions, answers, asr_texts)):

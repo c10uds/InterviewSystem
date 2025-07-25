@@ -25,8 +25,10 @@ set(SOURCES
     src/handlers/asr_handler.cpp
     src/handlers/tts_handler.cpp
     src/handlers/llm_handler.cpp
+    src/handlers/image_recognition_handler.cpp
     src/services/audio_service.cpp
     src/services/llm_service.cpp
+    src/services/image_service.cpp
     src/utils/json_utils.cpp
     src/utils/file_utils.cpp
     src/utils/logger.cpp
@@ -40,8 +42,10 @@ set(HEADERS
     include/handlers/asr_handler.h
     include/handlers/tts_handler.h
     include/handlers/llm_handler.h
+    include/handlers/image_recognition_handler.h
     include/services/audio_service.h
     include/services/llm_service.h
+    include/services/image_service.h
     include/utils/json_utils.h
     include/utils/file_utils.h
     include/utils/logger.h

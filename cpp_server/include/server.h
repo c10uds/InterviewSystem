@@ -18,6 +18,7 @@ class HealthHandler;
 class AsrHandler;
 class TtsHandler;
 class LlmHandler;
+class ImageRecognitionHandler;
 
 class Server {
 public:
@@ -55,6 +56,7 @@ private:
     std::unique_ptr<AsrHandler> asr_handler_;
     std::unique_ptr<TtsHandler> tts_handler_;
     std::unique_ptr<LlmHandler> llm_handler_;
+    std::unique_ptr<ImageRecognitionHandler> image_handler_;
     
     // 服务状态
     bool is_running_;

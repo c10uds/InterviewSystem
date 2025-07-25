@@ -3,6 +3,7 @@
 #include "handlers/asr_handler.h"
 #include "handlers/tts_handler.h"
 #include "handlers/llm_handler.h"
+#include "handlers/image_recognition_handler.h"
 #include "utils/logger.h"
 #include "utils/file_utils.h"
 
@@ -23,6 +24,7 @@ Server::Server(int port)
     asr_handler_ = std::make_unique<AsrHandler>();
     tts_handler_ = std::make_unique<TtsHandler>();
     llm_handler_ = std::make_unique<LlmHandler>();
+    image_handler_ = std::make_unique<ImageRecognitionHandler>();
 }
 
 Server::~Server() {
@@ -115,6 +117,11 @@ void Server::setup_routes() {
     // LLM对话接口
     server_->Post("/api/llm", [this](const httplib::Request& req, httplib::Response& res) {
         llm_handler_->handle_post(req, res);
+    });
+    
+    // 图像识别接口
+    server_->Post("/api/image", [this](const httplib::Request& req, httplib::Response& res) {
+        image_handler_->handle_post(req, res);
     });
     
     LOG_INFO("API路由设置完成");
