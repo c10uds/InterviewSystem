@@ -13,9 +13,9 @@
 #include "sc_llm.h"
 
 // SDK配置参数 - 请替换为您的实际参数
-const char* SPARKCHAIN_APPID = "82e7fa93";
-const char* SPARKCHAIN_APIKEY = "891ffce5b4b74fd82c3dbb65203c7614";
-const char* SPARKCHAIN_APISECRET = "ZDc4NjkyMjVhOGRlYWJiYmM3OWM1NDgy";
+const char* SPARKCHAIN_APPID = "";
+const char* SPARKCHAIN_APIKEY = "";
+const char* SPARKCHAIN_APISECRET = "";
 const char* SPARKCHAIN_WORKDIR = "./";
 
 // SparkChain回调实现

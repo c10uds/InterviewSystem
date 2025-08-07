@@ -9,6 +9,9 @@ find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(JSONCPP jsoncpp)
 
+# 查找FFmpeg库
+pkg_check_modules(FFMPEG REQUIRED libavformat libavcodec libavutil libswresample libswscale)
+
 # 添加第三方库目录
 set(HTTPLIB_REQUIRE_OPENSSL ON)
 
@@ -16,6 +19,7 @@ set(HTTPLIB_REQUIRE_OPENSSL ON)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 include_directories(/home/c10uds/WorkSpace/software_bei/SparkChain_Linux_SDK_2.0.0_rc1/include)
+include_directories(${FFMPEG_INCLUDE_DIRS})
 
 # 源文件
 set(SOURCES
@@ -33,6 +37,7 @@ set(SOURCES
     src/utils/json_utils.cpp
     src/utils/file_utils.cpp
     src/utils/logger.cpp
+    src/utils/audio_converter.cpp
 )
 
 # 头文件
@@ -50,6 +55,7 @@ set(HEADERS
     include/utils/json_utils.h
     include/utils/file_utils.h
     include/utils/logger.h
+    include/utils/audio_converter.h
     include/common/types.h
 )
 
@@ -60,14 +66,15 @@ add_executable(sparkchain_server ${SOURCES} ${HEADERS})
 target_link_libraries(sparkchain_server 
     Threads::Threads
     ${JSONCPP_LIBRARIES}
+    ${FFMPEG_LIBRARIES}
     ssl
     crypto
     /home/c10uds/WorkSpace/software_bei/SparkChain_Linux_SDK_2.0.0_rc1/libs/libSparkChain.so
 )
 
 # 编译选项
-target_compile_options(sparkchain_server PRIVATE ${JSONCPP_CFLAGS_OTHER})
-target_include_directories(sparkchain_server PRIVATE ${JSONCPP_INCLUDE_DIRS})
+target_compile_options(sparkchain_server PRIVATE ${JSONCPP_CFLAGS_OTHER} ${FFMPEG_CFLAGS_OTHER})
+target_include_directories(sparkchain_server PRIVATE ${JSONCPP_INCLUDE_DIRS} ${FFMPEG_INCLUDE_DIRS})
 
 # 安装规则
 install(TARGETS sparkchain_server DESTINATION bin)

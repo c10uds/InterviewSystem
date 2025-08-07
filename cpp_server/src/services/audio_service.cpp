@@ -1,6 +1,7 @@
 #include "services/audio_service.h"
 #include "utils/logger.h"
 #include "utils/file_utils.h"
+#include "utils/audio_converter.h"
 
 #include <random>
 #include <thread>
@@ -406,19 +407,43 @@ TtsResponse AudioService::process_speech_synthesis(const std::string& text,
 std::string AudioService::convert_audio_format(const std::string& audio_data, 
                                               const std::string& from_format,
                                               const std::string& to_format) {
-    // 音频格式转换的模拟实现
-    // 实际应用中需要使用FFmpeg或其他音频处理库
-    
-    if (from_format == to_format) {
+    try {
+        LOG_INFO_F("开始音频格式转换: %s -> %s, 数据大小: %zu bytes", 
+                  from_format.c_str(), to_format.c_str(), audio_data.size());
+        
+        // 如果格式相同，直接返回原数据
+        if (from_format == to_format) {
+            LOG_DEBUG("格式相同，直接返回原数据");
+            return audio_data;
+        }
+        
+        // 创建音频转换器实例
+        AudioConverter converter;
+        
+        // 执行格式转换
+        // 默认转换为 16kHz, 单声道，适合语音识别
+        std::string converted_data = converter.convert_format(
+            audio_data, 
+            from_format, 
+            to_format,
+            16000,  // 16kHz 采样率
+            1       // 单声道
+        );
+        
+        if (converted_data.empty()) {
+            LOG_ERROR("音频格式转换失败，返回空数据");
+            // 如果转换失败，返回原数据
+            return audio_data;
+        }
+        
+        LOG_INFO_F("音频格式转换成功，输出大小: %zu bytes", converted_data.size());
+        return converted_data;
+        
+    } catch (const std::exception& e) {
+        LOG_ERROR_F("音频格式转换异常: %s", e.what());
+        // 如果发生异常，返回原数据
         return audio_data;
     }
-    
-    LOG_INFO_F("转换音频格式: %s -> %s", from_format.c_str(), to_format.c_str());
-    
-    // 模拟转换过程
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    
-    return audio_data; // 返回原始数据作为模拟
 }
 
 bool AudioService::validate_audio_quality(const std::string& audio_data) {

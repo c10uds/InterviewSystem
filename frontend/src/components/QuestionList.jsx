@@ -1,5 +1,5 @@
 import React from 'react';
-import ReactMarkdown from 'react-markdown';
+import MarkdownRenderer from './MarkdownRenderer';
 
 const questionListStyle = {
   width: 320,
@@ -18,7 +18,7 @@ const QuestionList = ({ questions }) => (
     {questions && questions.length > 0 ? (
       questions.map((q, i) => (
         <div key={i} style={{ marginBottom: 18, borderRadius: 10, background: '#f7fbff', padding: 12 }}>
-          <ReactMarkdown>{q}</ReactMarkdown>
+          <MarkdownRenderer content={q} />
         </div>
       ))
     ) : (
