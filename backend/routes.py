@@ -439,6 +439,9 @@ def init_routes(app):
             image_files = request.files.getlist('images')
             image_paths = []
             
+            # 检查是否是代码提交
+            code_submission = request.form.get('code_submission', 'false').lower() == 'true'
+            
             # 处理音频文件
             if audio_file and audio_file.filename:
                 import os
@@ -564,6 +567,11 @@ def init_routes(app):
                     'chat_id': chat_id
                 }
             
+            # 如果是代码提交，添加代码标识
+            if code_submission:
+                user_answer = f"[代码提交]\n{user_answer}"
+                logger.info(f"[ai_next_question] 代码提交模式，代码长度: {len(user_answer)}")
+            
             # 添加调试日志
             logger.info(f"[ai_next_question] 接收到的数据: position={position}, chat_id={chat_id}, current_question={current_question}")
             logger.info(f"[ai_next_question] 请求数据: {data}")
@@ -590,7 +598,21 @@ def init_routes(app):
                         micro_expression_info += "\n"
             
             # 构建提示词，让AI根据回答和微表情分析生成下一个问题
-            prompt = f"""你是{position}岗位的面试官。
+            if code_submission:
+                prompt = f"""你是{position}岗位的面试官。
+
+当前问题：{current_question}
+应聘者代码提交：{user_answer}{micro_expression_info}
+
+请根据应聘者的代码质量、逻辑思维、编程风格等方面，生成下一个技术问题。重点关注：
+1. 代码的复杂度是否合适
+2. 是否有优化空间
+3. 编程习惯是否良好
+4. 是否需要考察其他技术点
+
+请生成下一个问题："""
+            else:
+                prompt = f"""你是{position}岗位的面试官。
 
 当前问题：{current_question}
 应聘者回答：{user_answer}{micro_expression_info}

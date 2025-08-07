@@ -9,6 +9,7 @@ import AvatarUpload from './components/AvatarUpload';
 import MarkdownRenderer from './components/MarkdownRenderer';
 import CameraTest from './components/CameraTest';
 import AdminPanel from './components/AdminPanel';
+import Editor from '@monaco-editor/react';
 import { 
   UserOutlined, 
   VideoCameraOutlined, 
@@ -226,6 +227,38 @@ function App() {
   const [showCameraTest, setShowCameraTest] = useState(false);
   // 新增：强制重新初始化摄像头的标志
   const [cameraRefreshFlag, setCameraRefreshFlag] = useState(0);
+  // 新增：侧边栏收起状态
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // 新增：代码编辑器内容
+  const [codeContent, setCodeContent] = useState(`// 在这里编写代码
+function interviewCode() {
+  console.log("面试代码示例");
+}
+
+// 支持多种编程语言
+const result = "Hello Interview!";
+
+// 算法示例
+function bubbleSort(arr) {
+  const len = arr.length;
+  for (let i = 0; i < len; i++) {
+    for (let j = 0; j < len - 1 - i; j++) {
+      if (arr[j] > arr[j + 1]) {
+        [arr[j], arr[j + 1]] = [arr[j + 1], arr[j]];
+      }
+    }
+  }
+  return arr;
+}
+
+// 数据结构示例
+class TreeNode {
+  constructor(val) {
+    this.val = val;
+    this.left = null;
+    this.right = null;
+  }
+}`);
 
   // 初始化用户信息
   const initializeUserInfo = async () => {
@@ -753,6 +786,63 @@ function App() {
     setInterviewLoading(false);
   };
 
+  // 提交代码作为答案
+  const handleSubmitCode = async () => {
+    if (!codeContent.trim()) {
+      message.warning('请先编写代码');
+      return;
+    }
+    
+    const currentQ = aiQuestions[currentQuestionIdx];
+    if (!chatId || !currentQ) {
+      message.error('会话异常，请刷新页面重试');
+      return;
+    }
+    
+    setInterviewLoading(true);
+    
+    try {
+      // 创建FormData对象
+      const formData = new FormData();
+      formData.append('position', position);
+      formData.append('current_question', currentQ);
+      formData.append('user_answer', codeContent);
+      formData.append('chat_id', chatId);
+      formData.append('code_submission', 'true'); // 标记这是代码提交
+      
+      // 请求下一个问题
+      const res = await axios.post('/api/ai_next_question', formData, {
+        headers: { 
+          Authorization: localStorage.getItem('token'),
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      
+      if (res.data.success && res.data.question) {
+        // 添加新问题到问题列表
+        setAiQuestions(prev => [...prev, res.data.question]);
+        setCurrentQuestionIdx(idx => idx + 1);
+        setAnswerRound(r => r + 1);
+        message.success('代码提交成功，获取下一题');
+      } else {
+        // 面试结束
+        setInterviewFinished(true);
+        setInterviewStarted(false);
+        message.info('面试已完成');
+        
+        // 自动保存面试记录
+        if (userAnswers.length > 0) {
+          handleEvaluateInterview();
+        }
+      }
+    } catch (error) {
+      console.error('提交代码失败:', error);
+      message.error('提交代码失败');
+    }
+    
+    setInterviewLoading(false);
+  };
+
   // 提交当前题目答案，每次提交后都请求下一个问题
   const handleNextQuestion = async () => {
     const answerText = text;
@@ -948,19 +1038,21 @@ function App() {
     </div>
   );
 
-  // 左侧竖栏样式（无圆角、无渐变，紧贴左侧）
+  // 左侧竖栏样式（完全统一管理员页面）
   const sidebarStyle = {
-    width: 64,
-    minWidth: 64,
-    background: '#e3f2fd',
-    height: '100%',
+    width: sidebarCollapsed ? 80 : 200,
+    minWidth: sidebarCollapsed ? 80 : 200,
+    background: '#001529',
+    height: 'calc(100vh - 56px)',
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'center',
-    boxShadow: '1px 0 8px 0 rgba(25, 118, 210, 0.04)',
-    marginRight: 0,
-    padding: '16px 0',
-    borderRight: '1px solid #e0e0e0',
+    boxShadow: '2px 0 8px 0 rgba(0, 0, 0, 0.1)',
+    borderRight: '1px solid #303030',
+    transition: 'all 0.3s ease',
+    position: 'fixed',
+    left: 0,
+    top: 56,
+    zIndex: 1000,
   };
 
     // 页面主体内容渲染
@@ -1059,7 +1151,7 @@ function App() {
       resume_upload_time: null
     };
     mainContent = (
-      <div style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 'calc(100vh - 56px)' }}>
+      <div style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 'calc(100vh - 56px)', paddingTop: '56px' }}>
         <div style={{ maxWidth: 900, width: '100%', background: '#fff', boxShadow: '0 2px 12px 0 rgba(0, 80, 180, 0.08)', padding: 32, position: 'relative', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 32 }}>
           <Button onClick={() => {
             setShowProfile(false);
@@ -1143,270 +1235,530 @@ function App() {
   } else if (loggedIn && isAdmin && showAdminPanel) {
     // 管理员页面 - 使用新的AdminPanel组件
     mainContent = (
-      <AdminPanel 
-        onLogout={() => {
-          setShowAdminPanel(false);
-          onLogout();
-        }} 
-        onBack={() => setShowAdminPanel(false)}
-      />
+      <div style={{ paddingTop: '56px' }}>
+        <AdminPanel 
+          onLogout={() => {
+            setShowAdminPanel(false);
+            onLogout();
+          }} 
+          onBack={() => setShowAdminPanel(false)}
+        />
+      </div>
     );
   } else {
     // 普通用户页面tab切换
     mainContent = (
-      <div style={{ width: '100%', display: 'flex', minHeight: 'calc(100vh - 56px)' }}>
+      <div style={{ 
+        width: '100%', 
+        display: 'flex', 
+        minHeight: 'calc(100vh - 56px)',
+        marginLeft: sidebarCollapsed ? 80 : 200,
+        transition: 'margin-left 0.3s ease'
+      }}>
+        {/* 侧边栏 */}
         <div style={sidebarStyle}>
-          {/* 面试页面 */}
+          {/* Logo区域 */}
           <div style={{
-            width: 40,
-            height: 40,
-            borderRadius: 12,
-            background: (showAdminPanel ? adminTab : activeTab) === 'interview' ? '#1976d2' : 'transparent',
-            color: (showAdminPanel ? adminTab : activeTab) === 'interview' ? '#fff' : '#1976d2',
+            height: 64,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: 22,
-            marginBottom: 18,
-            cursor: 'pointer',
-            border: 'none',
-            transition: 'background 0.2s',
-          }} onClick={() => (isAdmin ? handleAdminTabChange : handleTabChange)('interview')} title="模拟面试">
-            <VideoCameraOutlined />
+            borderBottom: '1px solid #303030',
+            color: '#fff',
+            fontSize: 18,
+            fontWeight: 600,
+          }}>
+            {!sidebarCollapsed && <span>智能面试</span>}
+            {sidebarCollapsed && <span>🎯</span>}
           </div>
-          {/* 历史记录 */}
-          <div style={{
-            width: 40,
-            height: 40,
-            borderRadius: 12,
-            background: (showAdminPanel ? adminTab : activeTab) === 'record' ? '#1976d2' : 'transparent',
-            color: (showAdminPanel ? adminTab : activeTab) === 'record' ? '#fff' : '#1976d2',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 22,
-            marginBottom: 18,
-            cursor: 'pointer',
-            border: 'none',
-            transition: 'background 0.2s',
-          }} onClick={() => (isAdmin ? handleAdminTabChange : handleTabChange)('record')} title="历史记录">
-            <HistoryOutlined />
-          </div>
-          {/* 管理按钮 - 仅管理员可见 */}
-          {isAdmin && (
+          
+          {/* 导航菜单 */}
+          <div style={{ flex: 1, padding: '16px 0' }}>
+            {/* 面试页面 */}
             <div style={{
-              width: 40,
-              height: 40,
-              borderRadius: 12,
-              background: showAdminPanel ? '#1976d2' : 'transparent',
-              color: showAdminPanel ? '#fff' : '#1976d2',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 22,
-              marginBottom: 18,
+              padding: '12px 24px',
+              margin: '4px 0',
+              background: (showAdminPanel ? adminTab : activeTab) === 'interview' ? '#1890ff' : 'transparent',
+              color: (showAdminPanel ? adminTab : activeTab) === 'interview' ? '#fff' : '#bfbfbf',
               cursor: 'pointer',
-              border: 'none',
-              transition: 'background 0.2s',
-            }} onClick={() => setShowAdminPanel(!showAdminPanel)} title="管理后台">
-              <SettingOutlined />
+              transition: 'all 0.2s',
+              fontWeight: 500,
+              borderRight: (showAdminPanel ? adminTab : activeTab) === 'interview' ? '3px solid #1890ff' : '3px solid transparent',
+            }} onClick={() => (isAdmin ? handleAdminTabChange : handleTabChange)('interview')}>
+              <VideoCameraOutlined style={{ marginRight: sidebarCollapsed ? 0 : 12, fontSize: 16 }} />
+              {!sidebarCollapsed && <span>模拟面试</span>}
             </div>
-          )}
-          {/* 文档中心 - 已隐藏 */}
-          {/* <div style={{
-            width: 40,
-            height: 40,
-            borderRadius: 12,
-            background: (isAdmin ? adminTab : activeTab) === 'doc' ? '#1976d2' : 'transparent',
-            color: (isAdmin ? adminTab : activeTab) === 'doc' ? '#fff' : '#1976d2',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 22,
-            marginBottom: 18,
-            cursor: 'pointer',
-            border: 'none',
-            transition: 'background 0.2s',
-          }} onClick={() => (isAdmin ? handleAdminTabChange : handleTabChange)('doc')} title="文档中心">
-            <FileTextOutlined />
-          </div> */}
+            
+            {/* 历史记录 */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '12px 24px',
+              margin: '4px 0',
+              background: (showAdminPanel ? adminTab : activeTab) === 'record' ? '#1890ff' : 'transparent',
+              color: (showAdminPanel ? adminTab : activeTab) === 'record' ? '#fff' : '#bfbfbf',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              fontWeight: 500,
+              borderRight: (showAdminPanel ? adminTab : activeTab) === 'record' ? '3px solid #1890ff' : '3px solid transparent',
+            }} onClick={() => (isAdmin ? handleAdminTabChange : handleTabChange)('record')}>
+              <HistoryOutlined style={{ marginRight: sidebarCollapsed ? 0 : 12, fontSize: 16 }} />
+              {!sidebarCollapsed && <span>历史记录</span>}
+            </div>
+            
+            {/* 管理按钮 - 仅管理员可见 */}
+            {isAdmin && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                padding: '12px 24px',
+                margin: '4px 0',
+                background: showAdminPanel ? '#1890ff' : 'transparent',
+                color: showAdminPanel ? '#fff' : '#bfbfbf',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                fontWeight: 500,
+                borderRight: showAdminPanel ? '3px solid #1890ff' : '3px solid transparent',
+              }} onClick={() => setShowAdminPanel(!showAdminPanel)}>
+                <SettingOutlined style={{ marginRight: sidebarCollapsed ? 0 : 12, fontSize: 16 }} />
+                {!sidebarCollapsed && <span>管理后台</span>}
+              </div>
+            )}
+          </div>
+          
+          {/* 收起/展开按钮 - 放在底部 */}
+          <div style={{
+            position: 'absolute',
+            bottom: 16,
+            left: 16,
+            right: 16,
+          }}>
+            <Button 
+              type="primary" 
+              block 
+              icon={<span style={{ fontSize: 12 }}>{sidebarCollapsed ? '→' : '←'}</span>}
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              style={{
+                background: '#1890ff',
+                border: 'none',
+                height: 40,
+                borderRadius: 6,
+              }}
+            >
+              {!sidebarCollapsed && <span>收起侧边栏</span>}
+            </Button>
+          </div>
         </div>
-        <div style={{ flex: 1, display: 'flex', height: '100%' }}>
-                      {/* 问题区 40% 仅在interview时显示 */}
+        {/* 主内容区域 */}
+        <div style={{ flex: 1, display: 'flex', height: '100%', paddingTop: '56px' }}>
+                      {/* 面试页面 - 四个区域布局 */}
             {(!showAdminPanel && activeTab === 'interview') && (
-              <div style={{ width: '40%', minWidth: 220, maxWidth: 480, height: '100%', background: '#fff', boxShadow: '0 2px 8px 0 rgba(25, 118, 210, 0.04)', borderRadius: '16px', margin: '16px', display: 'flex', flexDirection: 'column' }}>
-              {/* 岗位选择和开始面试按钮 */}
-              <div style={{ padding: 16, borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Select
-                  style={{ flex: 1 }}
-                  placeholder="请选择面试岗位/领域"
-                  value={position}
-                  onChange={setPosition}
-                  options={positions.map(p => ({ label: p, value: p }))}
-                  disabled={interviewStarted}
-                />
-                <Button type="primary" onClick={handleStartInterview} loading={interviewLoading} disabled={interviewStarted}>
-                  开始面试
-                </Button>
-              </div>
-              
-              {/* 新增：简历上传区域 */}
-              <div style={{ padding: 16, borderBottom: '1px solid #f0f0f0' }}>
-                <div style={{ fontWeight: 600, color: '#1976d2', marginBottom: 8 }}>简历上传</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <FileUpload
-                    accept=".md"
-                    onFileSelect={handleResumeUpload}
-                    buttonText={resumeUploaded ? '重新上传简历' : '上传简历(.md)'}
-                    disabled={interviewStarted || resumeLoading}
-                    loading={resumeLoading}
-                  />
-                  
-                  {resumeUploaded && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      <div style={{ fontSize: 12, color: '#52c41a' }}>
-                        ✓ 简历已上传: {resumeFile?.name}
-                      </div>
-                      <Button 
-                        size="small" 
-                        onClick={handleGenerateQuestionsFromResume}
+              <div style={{ height: '100%', width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gridTemplateRows: '1fr 1fr',
+                  gap: '10px',
+                  height: 'calc(100vh - 56px - 56px - 20px)',
+                  width: '80vw',
+                  maxWidth: '1200px',
+                  padding: '10px',
+                  overflow: 'hidden',
+                  background: 'transparent'
+                }}>
+                  {/* 左上角：岗位选择、简历上传和题目展示 */}
+                  <div style={{ 
+                    background: '#fff', 
+                    borderRadius: '8px', 
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{ fontWeight: 600, fontSize: '16px', color: '#1976d2', marginBottom: '8px' }}>
+                      岗位选择与题目
+                    </div>
+                    
+                    {/* 岗位选择 */}
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <Select
+                        style={{ flex: 1 }}
+                        placeholder="请选择面试岗位/领域"
+                        value={position}
+                        onChange={setPosition}
+                        options={positions.map(p => ({ label: p, value: p }))}
+                        disabled={interviewStarted}
+                      />
+                      <Button type="primary" onClick={handleStartInterview} loading={interviewLoading} disabled={interviewStarted}>
+                        开始面试
+                      </Button>
+                    </div>
+                    
+                    {/* 简历上传 */}
+                    <div>
+                      <div style={{ fontWeight: 600, color: '#1976d2', marginBottom: '8px' }}>简历上传</div>
+                      <FileUpload
+                        accept=".md"
+                        onFileSelect={handleResumeUpload}
+                        buttonText={resumeUploaded ? '重新上传简历' : '上传简历(.md)'}
+                        disabled={interviewStarted || resumeLoading}
                         loading={resumeLoading}
-                        disabled={!position || interviewStarted}
-                      >
-                        基于简历生成问题
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              {/* 面试题目流程 */}
-              {interviewStarted && aiQuestions.length > 0 && !interviewFinished ? (
-                <div style={{ padding: 24, fontSize: 18, fontWeight: 600, color: '#1976d2', minHeight: 120 }}>
-                  第{currentQuestionIdx+1}题：{aiQuestions[currentQuestionIdx]}
-                </div>
-              ) : !interviewStarted ? (
-                <div style={{ padding: 24, color: '#888', minHeight: 120 }}>
-                  {resumeQuestions.length > 0 ? (
-                    <div>
-                      <div style={{ fontWeight: 600, color: '#1976d2', marginBottom: 12 }}>基于简历生成的问题：</div>
-                      <div style={{ maxHeight: 300, overflowY: 'auto' }}>
-                        {resumeQuestions.map((q, idx) => (
-                          <div key={idx} style={{ 
-                            padding: 8, 
-                            marginBottom: 8, 
-                            background: '#f7fbff', 
-                            borderRadius: 6, 
-                            fontSize: 14,
-                            border: '1px solid #e3f0ff'
-                          }}>
-                            {idx + 1}. {q}
+                      />
+                      {resumeUploaded && (
+                        <div style={{ marginTop: '8px' }}>
+                          <div style={{ fontSize: '12px', color: '#52c41a' }}>
+                            ✓ 简历已上传: {resumeFile?.name}
                           </div>
-                        ))}
-                      </div>
-                      <Button 
-                        type="primary" 
-                        size="small" 
-                        style={{ marginTop: 12 }}
-                        onClick={() => {
-                          setAiQuestions(resumeQuestions);
-                          setInterviewStarted(true);
-                          setCurrentQuestionIdx(0);
-                          setUserAnswers([]);
-                          setInterviewFinished(false);
-                          setSessionId(Math.random().toString(36).substr(2, 9));
-                          setAnswerRound(0);
-                        }}
-                      >
-                        使用这些问题开始面试
-                      </Button>
-                    </div>
-                  ) : (
-                    <div>请点击"开始面试"获取AI题目，或上传简历生成针对性问题</div>
-                  )}
-                </div>
-              ) : interviewFinished ? (
-                <div style={{ padding: 24, color: '#52c41a', minHeight: 120 }}>面试已完成，评测结果已保存</div>
-              ) : null}
-            </div>
-          )}
-          {/* 右侧主内容区 70% */}
-          <div style={{ width: (!showAdminPanel && activeTab === 'interview') ? '70%' : '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-            {(!showAdminPanel && activeTab === 'interview') && (
-              <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'row', height: '100%' }}>
-                {/* 左侧：仅摄像头视频区，无岗位选择横条 */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: 480 * 2, minWidth: 320, background: '#f0f2f5', borderRadius: 16, margin: '24px 0', boxShadow: '0 2px 8px 0 rgba(25, 118, 210, 0.08)' }}>
-                  <div style={videoBoxStyle}>
-                    <video 
-                      ref={videoRef} 
-                      key={cameraRefreshFlag} 
-                      autoPlay 
-                      muted 
-                      style={{ width: '100%', height: '100%', borderRadius: 12, objectFit: 'cover', background: '#e0e0e0' }} 
-                    />
-                    {/* 摄像头状态指示器 */}
-                    <div style={{ 
-                      position: 'absolute', 
-                      top: 10, 
-                      right: 10, 
-                      padding: '4px 8px', 
-                      borderRadius: 4, 
-                      fontSize: 12, 
-                      fontWeight: 500,
-                      background: stream ? '#52c41a' : '#ff4d4f',
-                      color: 'white'
-                    }}>
-                      {stream ? '摄像头已连接' : '摄像头未连接'}
-                    </div>
-                    {/* 摄像头测试按钮 */}
-                    <Button 
-                      size="small"
-                      style={{ 
-                        position: 'absolute', 
-                        bottom: 10, 
-                        right: 10,
-                        background: '#1890ff',
-                        color: 'white',
-                        border: 'none'
-                      }}
-                      onClick={() => setShowCameraTest(true)}
-                    >
-                      测试摄像头
-                    </Button>
-                  </div>
-                  {/* 新增：隐藏的canvas用于拍照 */}
-                  <canvas ref={canvasRef} style={{ display: 'none' }} />
-                </div>
-                {/* 右侧：题目和作答区 */}
-                <div style={{ flex: 1, minWidth: 320, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', padding: '0 32px' }}>
-                  {/* 移除题目区，仅保留作答区 */}
-                  <div style={{ background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px 0 rgba(25, 118, 210, 0.06)', padding: 24, marginBottom: 0, minHeight: 180, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                    <div style={{ fontWeight: 600, color: '#1976d2', marginBottom: 4 }}>语音作答</div>
-                    {/* 录音按钮和文本输入框等原有内容保持不变 */}
-                    <div>
-                      {!recording ? (
-                        <Button style={recordBtnStyle} onClick={startRecording} icon={<span role="img" aria-label="mic">🎤</span>} disabled={!interviewStarted || interviewFinished} />
-                      ) : (
-                        <Button style={{ ...recordBtnStyle, background: 'linear-gradient(90deg, #f44336 0%, #ff9800 100%)' }} onClick={stopRecording} icon={<span role="img" aria-label="stop">⏹️</span>} disabled={!interviewStarted || interviewFinished} />
+                          <Button 
+                            size="small" 
+                            onClick={handleGenerateQuestionsFromResume}
+                            loading={resumeLoading}
+                            disabled={!position || interviewStarted}
+                            style={{ marginTop: '4px' }}
+                          >
+                            基于简历生成问题
+                          </Button>
+                        </div>
                       )}
                     </div>
-                    <Input.TextArea
-                      value={text}
-                      onChange={e => setText(e.target.value)}
-                      placeholder="请输入你的面试回答文本（可选）"
-                      rows={3}
-                      style={{ margin: '16px 0', borderRadius: 6, background: '#f7fbff', border: '1px solid #b3d8ff', width: 320 }}
+                    
+                    {/* 题目展示 */}
+                    <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+                      {interviewStarted && aiQuestions.length > 0 && !interviewFinished ? (
+                        <div style={{ fontSize: '16px', fontWeight: 600, color: '#1976d2' }}>
+                          第{currentQuestionIdx+1}题：{aiQuestions[currentQuestionIdx]}
+                        </div>
+                      ) : !interviewStarted ? (
+                        <div style={{ color: '#888' }}>
+                          {resumeQuestions.length > 0 ? (
+                            <div>
+                              <div style={{ fontWeight: 600, color: '#1976d2', marginBottom: '8px' }}>基于简历生成的问题：</div>
+                              <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                                {resumeQuestions.map((q, idx) => (
+                                  <div key={idx} style={{ 
+                                    padding: '8px', 
+                                    marginBottom: '8px', 
+                                    background: '#f7fbff', 
+                                    borderRadius: '6px', 
+                                    fontSize: '14px',
+                                    border: '1px solid #e3f0ff'
+                                  }}>
+                                    {idx + 1}. {q}
+                                  </div>
+                                ))}
+                              </div>
+                              <Button 
+                                type="primary" 
+                                size="small" 
+                                style={{ marginTop: '8px' }}
+                                onClick={() => {
+                                  setAiQuestions(resumeQuestions);
+                                  setInterviewStarted(true);
+                                  setCurrentQuestionIdx(0);
+                                  setUserAnswers([]);
+                                  setInterviewFinished(false);
+                                  setSessionId(Math.random().toString(36).substr(2, 9));
+                                  setAnswerRound(0);
+                                }}
+                              >
+                                使用这些问题开始面试
+                              </Button>
+                            </div>
+                          ) : (
+                            <div>请点击"开始面试"获取AI题目，或上传简历生成针对性问题</div>
+                          )}
+                        </div>
+                      ) : interviewFinished ? (
+                        <div style={{ color: '#52c41a' }}>面试已完成，评测结果已保存</div>
+                      ) : null}
+                    </div>
+                  </div>
+                  
+                  {/* 右上角：视频展示 */}
+                  <div style={{ 
+                    background: '#fff', 
+                    borderRadius: '8px', 
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{ fontWeight: 600, fontSize: '16px', color: '#1976d2', marginBottom: '12px' }}>
+                      面试视频
+                    </div>
+                    <div style={{ 
+                      flex: 1, 
+                      background: '#f0f2f5', 
+                      borderRadius: '8px', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      position: 'relative',
+                      overflow: 'hidden'
+                    }}>
+                      <video 
+                        ref={videoRef} 
+                        key={cameraRefreshFlag} 
+                        autoPlay 
+                        muted 
+                        style={{ 
+                          width: '100%', 
+                          height: '100%', 
+                          borderRadius: '8px', 
+                          objectFit: 'cover', 
+                          background: '#e0e0e0' 
+                        }} 
+                      />
+                      {/* 摄像头状态指示器 */}
+                      <div style={{ 
+                        position: 'absolute', 
+                        top: '10px', 
+                        right: '10px', 
+                        padding: '4px 8px', 
+                        borderRadius: '4px', 
+                        fontSize: '12px', 
+                        fontWeight: 500,
+                        background: stream ? '#52c41a' : '#ff4d4f',
+                        color: 'white'
+                      }}>
+                        {stream ? '摄像头已连接' : '摄像头未连接'}
+                      </div>
+                      {/* 摄像头测试按钮 */}
+                      <Button 
+                        size="small"
+                        style={{ 
+                          position: 'absolute', 
+                          bottom: '10px', 
+                          right: '10px',
+                          background: '#1890ff',
+                          color: 'white',
+                          border: 'none'
+                        }}
+                        onClick={() => setShowCameraTest(true)}
+                      >
+                        测试摄像头
+                      </Button>
+                    </div>
+                    {/* 隐藏的canvas用于拍照 */}
+                    <canvas ref={canvasRef} style={{ display: 'none' }} />
+                  </div>
+                  
+                  {/* 左下角：代码编辑器 */}
+                  <div style={{ 
+                    background: '#fff', 
+                    borderRadius: '8px', 
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{ fontWeight: 600, fontSize: '16px', color: '#1976d2', marginBottom: '12px' }}>
+                      代码编辑器
+                    </div>
+                    <div style={{ 
+                      flex: 1, 
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                      border: '1px solid #e0e0e0'
+                    }}>
+                                          <Editor
+                      height="100%"
+                      defaultLanguage="javascript"
+                      value={codeContent}
+                      onChange={(value) => setCodeContent(value || '')}
+                      theme="vs"
+                      options={{
+                          minimap: { enabled: false },
+                          fontSize: 14,
+                          lineNumbers: 'on',
+                          roundedSelection: false,
+                          scrollBeyondLastLine: false,
+                          automaticLayout: true,
+                          wordWrap: 'on',
+                          folding: true,
+                          foldingStrategy: 'indentation',
+                          showFoldingControls: 'always',
+                          renderLineHighlight: 'all',
+                          selectOnLineNumbers: true,
+                          glyphMargin: true,
+                          useTabStops: false,
+                          fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+                          tabSize: 2,
+                          insertSpaces: true,
+                          detectIndentation: false,
+                          trimAutoWhitespace: true,
+                          largeFileOptimizations: true,
+                          suggest: {
+                            showKeywords: true,
+                            showSnippets: true,
+                            showClasses: true,
+                            showConstructors: true,
+                            showFunctions: true,
+                            showMethods: true,
+                            showProperties: true,
+                            showEvents: true,
+                            showOperators: true,
+                            showUnits: true,
+                            showValues: true,
+                            showConstants: true,
+                            showEnums: true,
+                            showEnumMembers: true,
+                            showColors: true,
+                            showFiles: true,
+                            showReferences: true,
+                            showFolders: true,
+                            showTypeParameters: true,
+                            showWords: true,
+                            showUsers: true,
+                            showIssues: true,
+                            showColors: true,
+                            showCustomcolors: true,
+                            showVariables: true,
+                            showUserSnippets: true,
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* 右下角：文本回复和语音回复 */}
+                  <div style={{ 
+                    background: '#fff', 
+                    borderRadius: '8px', 
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{ fontWeight: 600, fontSize: '16px', color: '#1976d2' }}>
+                      回答区域
+                    </div>
+                    
+                    {/* 语音回复 */}
+                    <div style={{ flex: '0 0 auto' }}>
+                      <div style={{ fontWeight: 600, color: '#1976d2', marginBottom: '8px' }}>语音作答</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ 
+                          fontSize: '14px', 
+                          color: '#6b7280',
+                          flex: 1
+                        }}>
+                          点击右侧按钮开始录音
+                        </span>
+                        {!recording ? (
+                          <Button 
+                            style={{
+                              width: '48px',
+                              height: '48px',
+                              borderRadius: '50%',
+                              background: 'linear-gradient(90deg, #1976d2 0%, #42a5f5 100%)',
+                              border: 'none',
+                              color: '#fff',
+                              fontSize: '20px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              boxShadow: '0 2px 8px 0 rgba(25, 118, 210, 0.10)',
+                              flex: '0 0 auto'
+                            }} 
+                            onClick={startRecording} 
+                            icon={<span role="img" aria-label="mic">🎤</span>} 
+                            disabled={!interviewStarted || interviewFinished} 
+                          />
+                        ) : (
+                          <Button 
+                            style={{
+                              width: '48px',
+                              height: '48px',
+                              borderRadius: '50%',
+                              background: 'linear-gradient(90deg, #f44336 0%, #ff9800 100%)',
+                              border: 'none',
+                              color: '#fff',
+                              fontSize: '20px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              boxShadow: '0 2px 8px 0 rgba(25, 118, 210, 0.10)',
+                              flex: '0 0 auto'
+                            }} 
+                            onClick={stopRecording} 
+                            icon={<span role="img" aria-label="stop">⏹️</span>} 
+                            disabled={!interviewStarted || interviewFinished} 
+                          />
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* 文本回复 */}
+                    <div style={{ flex: 1, minHeight: 0 }}>
+                      <div style={{ fontWeight: 600, color: '#1976d2', marginBottom: '8px' }}>文本作答</div>
+                      <Input.TextArea
+                        value={text}
+                        onChange={e => setText(e.target.value)}
+                        placeholder="请输入你的面试回答文本（可选）"
+                        rows={3}
+                        style={{ 
+                          borderRadius: '6px', 
+                          background: '#f7fbff', 
+                          border: '1px solid #b3d8ff',
+                          height: '80px',
+                          resize: 'none'
+                        }}
+                        disabled={!interviewStarted || interviewFinished}
+                      />
+                    </div>
+                    
+                                      {/* 提交按钮 */}
+                  <div style={{ display: 'flex', gap: '8px', flex: '0 0 auto' }}>
+                    <Button 
+                      type="primary" 
+                      onClick={handleNextQuestion} 
+                      loading={interviewLoading} 
+                      style={{ 
+                        borderRadius: '4px', 
+                        background: '#1976d2', 
+                        border: 'none', 
+                        fontWeight: 600, 
+                        fontSize: '14px',
+                        height: '36px',
+                        flex: 1
+                      }} 
                       disabled={!interviewStarted || interviewFinished}
-                    />
-                    <Button type="primary" onClick={handleNextQuestion} loading={interviewLoading} style={{ borderRadius: 4, background: '#1976d2', border: 'none', fontWeight: 600, fontSize: 14, marginTop: 4 }} disabled={!interviewStarted || interviewFinished}>
+                    >
                       {currentQuestionIdx < 9 ? '提交本题，下一题' : '提交并完成面试'}
                     </Button>
+                    <Button 
+                      type="default" 
+                      onClick={() => handleSubmitCode()} 
+                      loading={interviewLoading} 
+                      style={{ 
+                        borderRadius: '4px', 
+                        border: '1px solid #1976d2', 
+                        color: '#1976d2',
+                        fontWeight: 600, 
+                        fontSize: '14px',
+                        height: '36px',
+                        flex: 1
+                      }} 
+                      disabled={!interviewStarted || interviewFinished}
+                    >
+                      提交代码
+                    </Button>
+                  </div>
                   </div>
                 </div>
               </div>
             )}
             {(!showAdminPanel && activeTab === 'record') && (
-              <div style={{ flex: 1, background: '#f4f8fd', padding: 32, overflowY: 'auto', display: 'flex', flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center' }}>
+              <div style={{ flex: 1, background: '#f4f8fd', padding: 32, paddingTop: '56px', overflowY: 'auto', display: 'flex', flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center' }}>
                 {/* 左侧：面试记录列表 */}
                 <div style={{ width: 260, minWidth: 180, background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px 0 rgba(25, 118, 210, 0.06)', marginRight: 32, padding: 16, height: 480, overflowY: 'auto' }}>
                   <div style={{ fontWeight: 700, color: '#1976d2', fontSize: 18, marginBottom: 16 }}>历史面试</div>
@@ -1527,19 +1879,19 @@ function App() {
               </div>
             )}
             {activeTab === 'doc' && (
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, color: '#1976d2', fontWeight: 600, background: '#fff' }}>
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, color: '#1976d2', fontWeight: 600, background: '#fff', paddingTop: '56px' }}>
                 文档中心（mock）
               </div>
             )}
           </div>
         </div>
-      </div>
+      // </div>
     );
   }
 
   // 页面统一布局：顶部横栏+主体内容
   return (
-    <div style={{ minHeight: '100vh', background: '#f4f8fd', paddingTop: 56 }}>
+    <div style={{ minHeight: '100vh', background: '#f4f8fd' }}>
       <TopBar />
       {mainContent}
       {showCameraTest && (
