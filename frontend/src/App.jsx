@@ -184,7 +184,6 @@ function App() {
   const [showAdminPanel, setShowAdminPanel] = useState(false); // 是否显示管理员面板
   const [adminTab, setAdminTab] = useState('records'); // 'records' or 'questions'
   const [showRegister, setShowRegister] = useState(false);
-  const [showProfile, setShowProfile] = useState(false);
   const mainContentRef = useRef(null);
   const [mainContentHeight, setMainContentHeight] = useState(0);
   // 个人信息页美化，支持头像上传
@@ -515,14 +514,11 @@ class TreeNode {
 
   // 侧边栏tab切换函数，防止未定义报错
   function handleTabChange(tab) {
-    if (tab === 'profile') return; // 个人信息只通过顶部小人图标进入
-    setShowProfile(false);
     setActiveTab(tab);
   }
   function handleAdminTabChange(tab) {
     // 如果不在管理面板中，管理员的行为应与普通用户一致
     if (!showAdminPanel) {
-      setShowProfile(false);
       setActiveTab(tab);
     } else {
       setAdminTab(tab);
@@ -550,17 +546,17 @@ class TreeNode {
 
   // 新增：获取用户信息
   useEffect(() => {
-    if (loggedIn && showProfile) {
+    if (loggedIn && activeTab === 'profile') {
       fetchUserInfo();
     }
-  }, [loggedIn, showProfile]);
+  }, [loggedIn, activeTab]);
 
   // 新增：简历上传成功后刷新用户信息
   useEffect(() => {
-    if (resumeUploaded && showProfile) {
+    if (resumeUploaded && activeTab === 'profile') {
       fetchUserInfo();
     }
-  }, [resumeUploaded, showProfile]);
+  }, [resumeUploaded, activeTab]);
 
   useEffect(() => {
     const currentTab = showAdminPanel ? adminTab : activeTab;
@@ -577,7 +573,7 @@ class TreeNode {
   useEffect(() => {
     // 只有在登录状态下且在面试页面且不在个人信息页面时才启动摄像头
     const currentTab = showAdminPanel ? adminTab : activeTab;
-    if (loggedIn && currentTab === 'interview' && !showProfile && !showAdminPanel) {
+    if (loggedIn && currentTab === 'interview' && !showAdminPanel) {
       // 检查浏览器是否支持getUserMedia
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         console.error('浏览器不支持摄像头访问');
@@ -634,7 +630,7 @@ class TreeNode {
         setStream(null);
       }
     };
-  }, [activeTab, adminTab, showAdminPanel, showProfile, loggedIn, cameraRefreshFlag]); // 添加所有影响摄像头显示的依赖项
+  }, [activeTab, adminTab, showAdminPanel, loggedIn, cameraRefreshFlag]); // 添加所有影响摄像头显示的依赖项
 
   // 动态获取右侧主内容区高度
   useEffect(() => {
@@ -646,7 +642,7 @@ class TreeNode {
     updateHeight();
     window.addEventListener('resize', updateHeight);
     return () => window.removeEventListener('resize', updateHeight);
-  }, [loggedIn, showProfile, activeTab]);
+  }, [loggedIn, activeTab]);
 
   // 录音逻辑
   const startRecording = async () => {
@@ -993,8 +989,8 @@ class TreeNode {
   // 顶部横栏内容根据页面动态变化
   const getTopBarTitle = () => {
     if (!loggedIn) return showRegister ? '注册新账号' : '欢迎登录';
-    if (showProfile) return '个人信息';
-    if (isAdmin) {
+    if (activeTab === 'profile') return '个人信息';
+    if (isAdmin && showAdminPanel) {
       if (adminTab === 'records') return '管理员：所有用户测评记录';
       if (adminTab === 'questions') return '管理员：题库管理';
       return '管理员页面';
@@ -1018,14 +1014,7 @@ class TreeNode {
       boxShadow: '0 2px 8px 0 rgba(25, 118, 210, 0.06)'
     }}>
       <div style={{ position: 'absolute', left: 24, display: 'flex', alignItems: 'center' }}>
-        {loggedIn && (
-          <Button
-            type="text"
-            icon={<UserOutlined style={{ fontSize: 22, color: '#fff' }} />}
-            style={{ marginRight: 8, background: 'none', border: 'none' }}
-            onClick={() => setShowProfile(true)}
-          />
-        )}
+        {/* 个人中心已移动到侧边栏 */}
       </div>
       <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', letterSpacing: 2 }}>
         {getTopBarTitle()}
@@ -1137,105 +1126,10 @@ class TreeNode {
         )}
       </div>
     );
-  } else if (showProfile) {
-    const currentUserInfo = userInfo || {
-      name: '加载中...',
-      email: '加载中...',
-      phone: '加载中...',
-      school: '加载中...',
-      grade: '加载中...',
-      target_position: '加载中...',
-      is_admin: isAdmin,
-      resume_content: null,
-      resume_filename: null,
-      resume_upload_time: null
-    };
-    mainContent = (
-      <div style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 'calc(100vh - 56px)', paddingTop: '56px' }}>
-        <div style={{ maxWidth: 900, width: '100%', background: '#fff', boxShadow: '0 2px 12px 0 rgba(0, 80, 180, 0.08)', padding: 32, position: 'relative', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 32 }}>
-          <Button onClick={() => {
-            setShowProfile(false);
-            // 如果返回到面试页面，强制重新初始化摄像头
-            const currentTab = showAdminPanel ? adminTab : activeTab;
-            if (currentTab === 'interview') {
-              setCameraRefreshFlag(flag => flag + 1);
-            }
-          }} style={{ position: 'absolute', top: 24, right: 32, borderRadius: 4, background: '#f0f2f5', color: '#1976d2', border: 'none', fontWeight: 500 }}>返回</Button>
-          
-          {/* 基本信息区 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
-            {/* 左侧头像区 */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 160 }}>
-              <div style={{ width: 100, height: 100, borderRadius: '50%', background: '#e3f0ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 44, color: '#1976d2', marginBottom: 16, overflow: 'hidden', position: 'relative' }}>
-                {avatarUrl ? (
-                  <img src={avatarUrl} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  currentUserInfo.name && currentUserInfo.name !== '加载中...' ? currentUserInfo.name[0] : 'U'
-                )}
-                <AvatarUpload onFileSelect={handleAvatarChange}>
-                  <div style={{ position: 'absolute', bottom: 0, right: 0, background: '#1976d2', color: '#fff', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, border: '2px solid #fff' }} title="更换头像">
-                    <span role="img" aria-label="upload">⬆️</span>
-                  </div>
-                </AvatarUpload>
-              </div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: '#1976d2', marginBottom: 4 }}>{currentUserInfo.name}</div>
-              <div style={{ color: '#888', fontSize: 15 }}>{currentUserInfo.is_admin ? '管理员' : '普通用户'}</div>
-            </div>
-            {/* 右侧信息区 */}
-            <div style={{ flex: 1, borderLeft: '1px solid #f0f0f0', paddingLeft: 32, display: 'flex', flexDirection: 'column', gap: 18 }}>
-              <div><b>邮箱：</b>{currentUserInfo.email}</div>
-              <div><b>手机号：</b>{currentUserInfo.phone}</div>
-              <div><b>学校：</b>{currentUserInfo.school}</div>
-              <div><b>年级：</b>{currentUserInfo.grade}</div>
-              <div><b>目标岗位：</b>{currentUserInfo.target_position}</div>
-            </div>
-          </div>
-          
-          {/* 简历信息区 */}
-          <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 24 }}>
-            <div style={{ fontWeight: 700, color: '#1976d2', fontSize: 18, marginBottom: 16 }}>简历信息</div>
-            {currentUserInfo.resume_content ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <span style={{ color: '#52c41a', fontSize: 16 }}>✓</span>
-                  <span><b>文件名：</b>{currentUserInfo.resume_filename}</span>
-                  <span style={{ color: '#888', fontSize: 12 }}>
-                    上传时间：{currentUserInfo.resume_upload_time ? new Date(currentUserInfo.resume_upload_time).toLocaleString() : '未知'}
-                  </span>
-                </div>
-                <div style={{ 
-                  background: '#f7fbff', 
-                  border: '1px solid #e3f0ff', 
-                  borderRadius: 8, 
-                  padding: 16, 
-                  maxHeight: 300, 
-                  overflowY: 'auto',
-                  fontSize: 14,
-                  lineHeight: 1.6
-                }}>
-                  <MarkdownRenderer content={currentUserInfo.resume_content} />
-                </div>
-              </div>
-            ) : (
-              <div style={{ 
-                background: '#f7fbff', 
-                border: '1px dashed #b3d8ff', 
-                borderRadius: 8, 
-                padding: 24, 
-                textAlign: 'center',
-                color: '#888'
-              }}>
-                暂无简历信息，请在面试页面上传简历
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
   } else if (loggedIn && isAdmin && showAdminPanel) {
     // 管理员页面 - 使用新的AdminPanel组件
     mainContent = (
-      <div style={{ paddingTop: '56px' }}>
+      <div style={{ paddingTop: '56px', overflowX: 'hidden', width: '100%', maxWidth: '100vw' }}>
         <AdminPanel 
           onLogout={() => {
             setShowAdminPanel(false);
@@ -1253,7 +1147,9 @@ class TreeNode {
         display: 'flex', 
         minHeight: 'calc(100vh - 56px)',
         marginLeft: sidebarCollapsed ? 80 : 200,
-        transition: 'margin-left 0.3s ease'
+        transition: 'margin-left 0.3s ease',
+        overflowX: 'hidden',
+        maxWidth: 'calc(100vw - 200px)'
       }}>
         {/* 侧边栏 */}
         <div style={sidebarStyle}>
@@ -1308,6 +1204,23 @@ class TreeNode {
               {!sidebarCollapsed && <span>历史记录</span>}
             </div>
             
+            {/* 个人中心 */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '12px 24px',
+              margin: '4px 0',
+              background: activeTab === 'profile' ? '#1890ff' : 'transparent',
+              color: activeTab === 'profile' ? '#fff' : '#bfbfbf',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              fontWeight: 500,
+              borderRight: activeTab === 'profile' ? '3px solid #1890ff' : '3px solid transparent',
+            }} onClick={() => handleTabChange('profile')}>
+              <UserOutlined style={{ marginRight: sidebarCollapsed ? 0 : 12, fontSize: 16 }} />
+              {!sidebarCollapsed && <span>个人中心</span>}
+            </div>
+            
             {/* 管理按钮 - 仅管理员可见 */}
             {isAdmin && (
               <div style={{
@@ -1352,7 +1265,7 @@ class TreeNode {
           </div>
         </div>
         {/* 主内容区域 */}
-        <div style={{ flex: 1, display: 'flex', height: '100%', paddingTop: '56px' }}>
+        <div style={{ flex: 1, display: 'flex', height: '100%', paddingTop: '56px', overflowX: 'hidden', width: '100%' }}>
                       {/* 面试页面 - 四个区域布局 */}
             {(!showAdminPanel && activeTab === 'interview') && (
               <div style={{ height: '100%', width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
@@ -1362,8 +1275,8 @@ class TreeNode {
                   gridTemplateRows: '1fr 1fr',
                   gap: '10px',
                   height: 'calc(100vh - 56px - 56px - 20px)',
-                  width: '80vw',
-                  maxWidth: '1200px',
+                  width: '100%',
+                  maxWidth: 'calc(100vw - 220px)',
                   padding: '10px',
                   overflow: 'hidden',
                   background: 'transparent'
@@ -1758,7 +1671,7 @@ class TreeNode {
               </div>
             )}
             {(!showAdminPanel && activeTab === 'record') && (
-              <div style={{ flex: 1, background: '#f4f8fd', padding: 32, paddingTop: '56px', overflowY: 'auto', display: 'flex', flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center' }}>
+              <div style={{ flex: 1, background: '#f4f8fd', padding: 32, paddingTop: '56px', overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center' }}>
                 {/* 左侧：面试记录列表 */}
                 <div style={{ width: 260, minWidth: 180, background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px 0 rgba(25, 118, 210, 0.06)', marginRight: 32, padding: 16, height: 480, overflowY: 'auto' }}>
                   <div style={{ fontWeight: 700, color: '#1976d2', fontSize: 18, marginBottom: 16 }}>历史面试</div>
@@ -1878,20 +1791,92 @@ class TreeNode {
                 </div>
               </div>
             )}
+            {activeTab === 'profile' && (
+              <div style={{ flex: 1, background: '#f4f8fd', padding: 32, paddingTop: '56px', overflowY: 'auto', overflowX: 'hidden', display: 'flex', justifyContent: 'center', alignItems: 'flex-start' }}>
+                <div style={{ maxWidth: 900, width: '100%', background: '#fff', boxShadow: '0 2px 12px 0 rgba(0, 80, 180, 0.08)', padding: 32, position: 'relative', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 32 }}>
+                  {/* 基本信息区 */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
+                    {/* 左侧头像区 */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 160 }}>
+                      <div style={{ width: 100, height: 100, borderRadius: '50%', background: '#e3f0ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 44, color: '#1976d2', marginBottom: 16, overflow: 'hidden', position: 'relative' }}>
+                        {avatarUrl ? (
+                          <img src={avatarUrl} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          userInfo && userInfo.name ? userInfo.name[0] : 'U'
+                        )}
+                        <AvatarUpload onFileSelect={handleAvatarChange}>
+                          <div style={{ position: 'absolute', bottom: 0, right: 0, background: '#1976d2', color: '#fff', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, border: '2px solid #fff' }} title="更换头像">
+                            <span role="img" aria-label="upload">⬆️</span>
+                          </div>
+                        </AvatarUpload>
+                      </div>
+                      <div style={{ fontSize: 20, fontWeight: 700, color: '#1976d2', marginBottom: 4 }}>{userInfo?.name || '加载中...'}</div>
+                      <div style={{ color: '#888', fontSize: 15 }}>{userInfo?.is_admin ? '管理员' : '普通用户'}</div>
+                    </div>
+                    {/* 右侧信息区 */}
+                    <div style={{ flex: 1, borderLeft: '1px solid #f0f0f0', paddingLeft: 32, display: 'flex', flexDirection: 'column', gap: 18 }}>
+                      <div><b>邮箱：</b>{userInfo?.email || '加载中...'}</div>
+                      <div><b>手机号：</b>{userInfo?.phone || '加载中...'}</div>
+                      <div><b>学校：</b>{userInfo?.school || '加载中...'}</div>
+                      <div><b>年级：</b>{userInfo?.grade || '加载中...'}</div>
+                      <div><b>目标岗位：</b>{userInfo?.target_position || '加载中...'}</div>
+                    </div>
+                  </div>
+                  
+                  {/* 简历信息区 */}
+                  <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 24 }}>
+                    <div style={{ fontWeight: 700, color: '#1976d2', fontSize: 18, marginBottom: 16 }}>简历信息</div>
+                    {userInfo?.resume_content ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <span style={{ color: '#52c41a', fontSize: 16 }}>✓</span>
+                          <span><b>文件名：</b>{userInfo.resume_filename}</span>
+                          <span style={{ color: '#888', fontSize: 12 }}>
+                            上传时间：{userInfo.resume_upload_time ? new Date(userInfo.resume_upload_time).toLocaleString() : '未知'}
+                          </span>
+                        </div>
+                        <div style={{ 
+                          background: '#f7fbff', 
+                          border: '1px solid #e3f0ff', 
+                          borderRadius: 8, 
+                          padding: 16, 
+                          maxHeight: 300, 
+                          overflowY: 'auto',
+                          fontSize: 14,
+                          lineHeight: 1.6
+                        }}>
+                          <MarkdownRenderer content={userInfo.resume_content} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ 
+                        background: '#f7fbff', 
+                        border: '1px dashed #b3d8ff', 
+                        borderRadius: 8, 
+                        padding: 24, 
+                        textAlign: 'center',
+                        color: '#888'
+                      }}>
+                        暂无简历信息，请在面试页面上传简历
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
             {activeTab === 'doc' && (
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, color: '#1976d2', fontWeight: 600, background: '#fff', paddingTop: '56px' }}>
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, color: '#1976d2', fontWeight: 600, background: '#fff', paddingTop: '56px', overflowX: 'hidden' }}>
                 文档中心（mock）
               </div>
             )}
           </div>
         </div>
-      // </div>
-    );
+      );
   }
 
   // 页面统一布局：顶部横栏+主体内容
   return (
-    <div style={{ minHeight: '100vh', background: '#f4f8fd' }}>
+    <div style={{ minHeight: '100vh', background: '#f4f8fd', overflowX: 'hidden', width: '100%', maxWidth: '100vw' }}>
       <TopBar />
       {mainContent}
       {showCameraTest && (

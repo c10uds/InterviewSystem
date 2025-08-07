@@ -39,6 +39,34 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated
 
+def jwt_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        token = request.headers.get('Authorization')
+        if not token:
+            return jsonify({"success": False, "msg": "缺少 Authorization Token"}), 401
+
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            user_id = payload.get('user_id')
+            if not user_id:
+                return jsonify({"success": False, "msg": "无效 Token"}), 401
+
+            user = User.query.get(user_id)
+            if not user:
+                return jsonify({"success": False, "msg": "用户不存在"}), 404
+
+            return f(user, *args, **kwargs)
+
+        except jwt.ExpiredSignatureError:
+            return jsonify({"success": False, "msg": "Token 已过期"}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"success": False, "msg": "无效 Token"}), 401
+        except Exception as e:
+            return jsonify({"success": False, "msg": f"Token 解析失败: {e}"}), 401
+
+    return decorated_function
+
 def init_routes(app):
     """初始化所有路由"""
     
@@ -360,11 +388,11 @@ def init_routes(app):
             return jsonify({"error": "评估面试失败"}), 500
 
     @app.route('/api/interview_records', methods=['GET'])
-    @login_required
-    def get_interview_records():
+    @jwt_required
+    def get_interview_records(user):
         """获取面试记录"""
         try:
-            user_id = session.get('user_id')
+            user_id = user.id
             logger.info(f"[get_interview_records] 用户ID: {user_id}")
             
             records = InterviewRecord.query.filter_by(user_id=user_id).order_by(InterviewRecord.created_at.desc()).all()
@@ -1141,6 +1169,14 @@ def init_routes(app):
         except Exception as e:
             logger.error(f"[admin_get_interview_detail] 获取面试记录详情失败: {e}")
             return jsonify({'success': False, 'msg': f'获取面试记录详情失败: {str(e)}'}), 500
+        
+    @app.route('/api/user/info', methods=['GET'])
+    @jwt_required
+    def get_user_info(user):
+        return jsonify({
+            "success": True,
+            "user": user.to_dict()
+        })
 
     # ====== 管理员功能 API 结束 ======
 
