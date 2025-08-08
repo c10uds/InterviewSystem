@@ -13,7 +13,7 @@ from config import (
     SECRET_KEY, SQLALCHEMY_DATABASE_URI, SQLALCHEMY_TRACK_MODIFICATIONS,
     LOG_LEVEL, LOG_FORMAT, SPEECH_APPID, SPEECH_API_KEY, SPEECH_API_SECRET
 )
-from models import db
+from models import db, User, InterviewRecord, Position, ResumeModule, ResumeHistory
 from routes import init_routes
 from speech_recognition import init_speech_service
 

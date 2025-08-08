@@ -96,4 +96,68 @@ class InterviewRecord(db.Model):
             'audio_urls': json.loads(self.audio_urls) if self.audio_urls else [],
             'result': json.loads(self.result) if self.result else {},
             'created_at': self.created_at.isoformat()
+        }
+
+class ResumeModule(db.Model):
+    """简历模块模型"""
+    __tablename__ = 'resume_module'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    module_type = db.Column(db.String(64), nullable=False)  # 模块类型：个人简介、教育经历、工作经历等
+    module_name = db.Column(db.String(128), nullable=False)  # 模块名称
+    content = db.Column(db.Text)  # JSON格式存储模块内容
+    order_index = db.Column(db.Integer, default=0)  # 排序索引
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    
+    # 添加用户关系
+    user = db.relationship('User', backref='resume_modules')
+
+    def to_dict(self):
+        import json
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'module_type': self.module_type,
+            'module_name': self.module_name,
+            'content': json.loads(self.content) if self.content else {},
+            'order_index': self.order_index,
+            'is_active': self.is_active,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat()
+        }
+
+class ResumeHistory(db.Model):
+    """简历历史模型"""
+    __tablename__ = 'resume_history'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    task_id = db.Column(db.String(64), unique=True, nullable=False)  # 任务ID
+    generation_type = db.Column(db.String(64), default='auto')  # 生成类型：auto/manual
+    status = db.Column(db.String(32), default='processing')  # 状态：processing/completed/failed
+    resume_data = db.Column(db.Text)  # JSON格式存储简历数据
+    file_name = db.Column(db.String(256))  # 文件名
+    file_path = db.Column(db.String(512))  # 文件路径
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    
+    # 添加用户关系
+    user = db.relationship('User', backref='resume_histories')
+
+    def to_dict(self):
+        import json
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'task_id': self.task_id,
+            'generation_type': self.generation_type,
+            'status': self.status,
+            'resume_data': json.loads(self.resume_data) if self.resume_data else {},
+            'file_name': self.file_name,
+            'file_path': self.file_path,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat()
         } 

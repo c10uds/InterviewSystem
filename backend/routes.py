@@ -14,7 +14,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 from functools import wraps
 
-from models import db, User, InterviewRecord, Position
+from models import db, User, InterviewRecord, Position, ResumeModule, ResumeHistory
 from config import UPLOAD_FOLDER, DEFAULT_POSITIONS, JWT_SECRET, JWT_ALGORITHM
 from utils import login_required, next_question, evaluate_interview, evaluate_interview_with_images
 from llm_api import chat_manager, ask_llm_with_http, analyze_image_with_face_expression_api
@@ -1178,6 +1178,263 @@ def init_routes(app):
             "user": user.to_dict()
         })
 
-    # ====== 管理员功能 API 结束 ======
+    # ====== 简历功能 API ======
+    
+    @app.route('/api/resume/modules', methods=['GET'])
+    @jwt_required
+    def get_resume_modules(user):
+        """获取用户的简历模块列表"""
+        try:
+            modules = ResumeModule.query.filter_by(user_id=user.id, is_active=True).order_by(ResumeModule.order_index).all()
+            return jsonify({
+                "success": True,
+                "modules": [module.to_dict() for module in modules]
+            })
+        except Exception as e:
+            logger.error(f"获取简历模块失败: {e}")
+            return jsonify({"success": False, "msg": "获取简历模块失败"}), 500
+
+    @app.route('/api/resume/modules', methods=['POST'])
+    @jwt_required
+    def create_resume_module(user):
+        """创建简历模块"""
+        try:
+            data = request.get_json()
+            module_type = data.get('module_type')
+            module_name = data.get('module_name')
+            
+            if not module_type or not module_name:
+                return jsonify({"success": False, "msg": "模块类型和名称不能为空"}), 400
+            
+            # 获取最大排序索引
+            max_order = db.session.query(db.func.max(ResumeModule.order_index)).filter_by(user_id=user.id).scalar() or 0
+            
+            module = ResumeModule(
+                user_id=user.id,
+                module_type=module_type,
+                module_name=module_name,
+                content=json.dumps({}),
+                order_index=max_order + 1
+            )
+            
+            db.session.add(module)
+            db.session.commit()
+            
+            return jsonify({
+                "success": True,
+                "module": module.to_dict()
+            })
+        except Exception as e:
+            logger.error(f"创建简历模块失败: {e}")
+            db.session.rollback()
+            return jsonify({"success": False, "msg": "创建简历模块失败"}), 500
+
+    @app.route('/api/resume/modules/<int:module_id>', methods=['PUT'])
+    @jwt_required
+    def update_resume_module(user, module_id):
+        """更新简历模块内容"""
+        try:
+            module = ResumeModule.query.filter_by(id=module_id, user_id=user.id).first()
+            if not module:
+                return jsonify({"success": False, "msg": "模块不存在"}), 404
+            
+            data = request.get_json()
+            content = data.get('content', {})
+            
+            module.content = json.dumps(content)
+            module.updated_at = datetime.utcnow()
+            
+            db.session.commit()
+            
+            return jsonify({
+                "success": True,
+                "module": module.to_dict()
+            })
+        except Exception as e:
+            logger.error(f"更新简历模块失败: {e}")
+            db.session.rollback()
+            return jsonify({"success": False, "msg": "更新简历模块失败"}), 500
+
+    @app.route('/api/resume/modules/<int:module_id>', methods=['DELETE'])
+    @jwt_required
+    def delete_resume_module(user, module_id):
+        """删除简历模块"""
+        try:
+            module = ResumeModule.query.filter_by(id=module_id, user_id=user.id).first()
+            if not module:
+                return jsonify({"success": False, "msg": "模块不存在"}), 404
+            
+            module.is_active = False
+            db.session.commit()
+            
+            return jsonify({"success": True})
+        except Exception as e:
+            logger.error(f"删除简历模块失败: {e}")
+            db.session.rollback()
+            return jsonify({"success": False, "msg": "删除简历模块失败"}), 500
+
+    @app.route('/api/resume/histories', methods=['GET'])
+    @jwt_required
+    def get_resume_histories(user):
+        """获取用户的简历历史列表"""
+        try:
+            histories = ResumeHistory.query.filter_by(user_id=user.id).order_by(ResumeHistory.created_at.desc()).all()
+            return jsonify({
+                "success": True,
+                "histories": [history.to_dict() for history in histories]
+            })
+        except Exception as e:
+            logger.error(f"获取简历历史失败: {e}")
+            return jsonify({"success": False, "msg": "获取简历历史失败"}), 500
+
+    @app.route('/api/resume/generate', methods=['POST'])
+    @jwt_required
+    def generate_resume(user):
+        """生成简历"""
+        try:
+            # 获取用户的所有简历模块
+            modules = ResumeModule.query.filter_by(user_id=user.id, is_active=True).order_by(ResumeModule.order_index).all()
+            
+            if not modules:
+                return jsonify({"success": False, "msg": "请先添加简历模块"}), 400
+            
+            # 生成任务ID
+            task_id = str(uuid.uuid4())
+            
+            # 创建简历历史记录
+            history = ResumeHistory(
+                user_id=user.id,
+                task_id=task_id,
+                generation_type='manual',
+                status='processing'
+            )
+            
+            db.session.add(history)
+            db.session.commit()
+            
+            # 模拟简历生成过程（实际项目中可能需要异步任务）
+            resume_data = {}
+            for module in modules:
+                content = json.loads(module.content) if module.content else {}
+                resume_data[module.module_type] = content
+            
+            # 更新历史记录
+            history.resume_data = json.dumps([resume_data])  # 支持多个简历版本
+            history.status = 'completed'
+            history.updated_at = datetime.utcnow()
+            
+            db.session.commit()
+            
+            return jsonify({
+                "success": True,
+                "task_id": task_id,
+                "msg": "简历生成成功"
+            })
+        except Exception as e:
+            logger.error(f"生成简历失败: {e}")
+            db.session.rollback()
+            return jsonify({"success": False, "msg": "生成简历失败"}), 500
+
+    @app.route('/api/resume/download/<int:history_id>', methods=['GET'])
+    @jwt_required
+    def download_resume(user, history_id):
+        """下载简历文件"""
+        try:
+            history = ResumeHistory.query.filter_by(id=history_id, user_id=user.id).first()
+            if not history:
+                return jsonify({"success": False, "msg": "简历历史不存在"}), 404
+            
+            if history.status != 'completed':
+                return jsonify({"success": False, "msg": "简历尚未生成完成"}), 400
+            
+            # 这里应该生成实际的Word文档
+            # 为了演示，我们返回一个简单的文本文件
+            from io import BytesIO
+            from flask import send_file
+            
+            resume_content = "简历内容\n"
+            if history.resume_data:
+                data = json.loads(history.resume_data)
+                if isinstance(data, list) and len(data) > 0:
+                    resume_data = data[0]
+                    if resume_data.get('personal_info'):
+                        info = resume_data['personal_info']
+                        resume_content += f"姓名: {info.get('name', '')}\n"
+                        resume_content += f"性别: {info.get('gender', '')}\n"
+                        resume_content += f"手机: {info.get('phone', '')}\n"
+                        resume_content += f"邮箱: {info.get('email', '')}\n"
+                        resume_content += f"年龄: {info.get('age', '')}\n"
+                        resume_content += f"身份: {info.get('identity', '')}\n\n"
+                    
+                    if resume_data.get('education'):
+                        edu = resume_data['education']
+                        resume_content += f"教育经历:\n"
+                        resume_content += f"学校: {edu.get('school', '')}\n"
+                        resume_content += f"专业: {edu.get('major', '')}\n"
+                        resume_content += f"学历: {edu.get('degree', '')}\n\n"
+                    
+                    if resume_data.get('work_experience'):
+                        work = resume_data['work_experience']
+                        resume_content += f"工作经历:\n"
+                        resume_content += f"公司: {work.get('company', '')}\n"
+                        resume_content += f"职位: {work.get('position', '')}\n"
+                        resume_content += f"描述: {work.get('description', '')}\n\n"
+            
+            # 创建文件流
+            file_stream = BytesIO(resume_content.encode('utf-8'))
+            
+            return send_file(
+                file_stream,
+                as_attachment=True,
+                download_name=f"简历_{history.task_id}.txt",
+                mimetype='text/plain'
+            )
+        except Exception as e:
+            logger.error(f"下载简历失败: {e}")
+            return jsonify({"success": False, "msg": "下载简历失败"}), 500
+
+    @app.route('/api/resume/collect/<int:history_id>', methods=['POST'])
+    @jwt_required
+    def collect_resume(user, history_id):
+        """收藏简历"""
+        try:
+            history = ResumeHistory.query.filter_by(id=history_id, user_id=user.id).first()
+            if not history:
+                return jsonify({"success": False, "msg": "简历历史不存在"}), 404
+            
+            # 这里可以添加收藏逻辑，比如设置收藏标记
+            # 为了演示，我们直接返回成功
+            return jsonify({"success": True, "msg": "收藏成功"})
+        except Exception as e:
+            logger.error(f"收藏简历失败: {e}")
+            return jsonify({"success": False, "msg": "收藏简历失败"}), 500
+
+    @app.route('/api/resume/save/<int:history_id>', methods=['POST'])
+    @jwt_required
+    def save_resume(user, history_id):
+        """保存简历"""
+        try:
+            data = request.get_json()
+            file_name = data.get('file_name')
+            
+            if not file_name:
+                return jsonify({"success": False, "msg": "文件名不能为空"}), 400
+            
+            history = ResumeHistory.query.filter_by(id=history_id, user_id=user.id).first()
+            if not history:
+                return jsonify({"success": False, "msg": "简历历史不存在"}), 404
+            
+            history.file_name = file_name
+            history.updated_at = datetime.utcnow()
+            
+            db.session.commit()
+            
+            return jsonify({"success": True, "msg": "保存成功"})
+        except Exception as e:
+            logger.error(f"保存简历失败: {e}")
+            db.session.rollback()
+            return jsonify({"success": False, "msg": "保存简历失败"}), 500
+
+    # ====== 简历功能 API 结束 ======
 
     return app 

@@ -9,6 +9,8 @@ import AvatarUpload from './components/AvatarUpload';
 import MarkdownRenderer from './components/MarkdownRenderer';
 import CameraTest from './components/CameraTest';
 import AdminPanel from './components/AdminPanel';
+import ResumeEditor from './components/ResumeEditor';
+import ResumeHistory from './components/ResumeHistory';
 import Editor from '@monaco-editor/react';
 import { 
   UserOutlined, 
@@ -23,7 +25,9 @@ import {
   AimOutlined,
   LockOutlined,
   UserAddOutlined,
-  LoginOutlined
+  LoginOutlined,
+  EditOutlined,
+  FileDoneOutlined
 } from '@ant-design/icons';
 
 
@@ -1221,6 +1225,40 @@ class TreeNode {
               {!sidebarCollapsed && <span>个人中心</span>}
             </div>
             
+            {/* 简历编辑 */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '12px 24px',
+              margin: '4px 0',
+              background: activeTab === 'resume_edit' ? '#1890ff' : 'transparent',
+              color: activeTab === 'resume_edit' ? '#fff' : '#bfbfbf',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              fontWeight: 500,
+              borderRight: activeTab === 'resume_edit' ? '3px solid #1890ff' : '3px solid transparent',
+            }} onClick={() => handleTabChange('resume_edit')}>
+              <EditOutlined style={{ marginRight: sidebarCollapsed ? 0 : 12, fontSize: 16 }} />
+              {!sidebarCollapsed && <span>简历编辑</span>}
+            </div>
+            
+            {/* 简历历史 */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '12px 24px',
+              margin: '4px 0',
+              background: activeTab === 'resume_history' ? '#1890ff' : 'transparent',
+              color: activeTab === 'resume_history' ? '#fff' : '#bfbfbf',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              fontWeight: 500,
+              borderRight: activeTab === 'resume_history' ? '3px solid #1890ff' : '3px solid transparent',
+            }} onClick={() => handleTabChange('resume_history')}>
+              <FileDoneOutlined style={{ marginRight: sidebarCollapsed ? 0 : 12, fontSize: 16 }} />
+              {!sidebarCollapsed && <span>简历历史</span>}
+            </div>
+            
             {/* 管理按钮 - 仅管理员可见 */}
             {isAdmin && (
               <div style={{
@@ -1671,124 +1709,235 @@ class TreeNode {
               </div>
             )}
             {(!showAdminPanel && activeTab === 'record') && (
-              <div style={{ flex: 1, background: '#f4f8fd', padding: 32, paddingTop: '56px', overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center' }}>
+              <div style={{
+                flex: 1,
+                background: '#f4f8fd',
+                padding: 32,
+                paddingTop: '56px',
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                display: 'flex',
+                flexDirection: 'row',
+                alignItems: 'flex-start',
+                justifyContent: 'center',
+                gap: 32
+              }}>
                 {/* 左侧：面试记录列表 */}
-                <div style={{ width: 260, minWidth: 180, background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px 0 rgba(25, 118, 210, 0.06)', marginRight: 32, padding: 16, height: 480, overflowY: 'auto' }}>
-                  <div style={{ fontWeight: 700, color: '#1976d2', fontSize: 18, marginBottom: 16 }}>历史面试</div>
+                <div style={{
+                  width: 260,
+                  minWidth: 180,
+                  background: '#fff',
+                  borderRadius: 8,
+                  boxShadow: '0 2px 8px rgba(25, 118, 210, 0.06)',
+                  padding: 16,
+                  height: 480,
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}>
+                  <div style={{
+                    fontWeight: 700,
+                    color: '#1976d2',
+                    fontSize: 18,
+                    marginBottom: 16
+                  }}>历史面试</div>
+
                   {interviewRecords.length === 0 ? (
-                    <div style={{ color: '#888', fontSize: 16, textAlign: 'center' }}>暂无记录</div>
+                    <div style={{ color: '#888', fontSize: 16, textAlign: 'center', marginTop: 'auto', marginBottom: 'auto' }}>
+                      暂无记录
+                    </div>
                   ) : (
                     interviewRecords.map((rec, idx) => (
-                      <div key={rec.id || idx} style={{ marginBottom: 18, cursor: 'pointer', padding: 8, borderRadius: 6, background: selectedRecord && selectedRecord.id === rec.id ? '#e3f0ff' : 'transparent' }}
-                        onClick={() => setSelectedRecord(rec)}>
+                      <div
+                        key={rec.id || idx}
+                        style={{
+                          marginBottom: 12,
+                          cursor: 'pointer',
+                          padding: 8,
+                          borderRadius: 6,
+                          background: selectedRecord?.id === rec.id ? '#e3f0ff' : 'transparent'
+                        }}
+                        onClick={() => setSelectedRecord(rec)}
+                      >
                         <div style={{ fontWeight: 600, color: '#1976d2' }}>{rec.position}</div>
-                        <div style={{ color: '#888', fontSize: 13 }}>{rec.created_at ? rec.created_at.split('T')[0] : ''}</div>
+                        <div style={{ color: '#888', fontSize: 13 }}>{rec.created_at?.split('T')[0]}</div>
                       </div>
                     ))
                   )}
                 </div>
-                {/* 右侧：详情区 */}
-                <div style={{ flex: 1, minWidth: 320, display: 'flex', flexDirection: 'column', gap: 24 }}>
-                  {/* 右上：六维图 */}
-                  <div style={{ background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px 0 rgba(25, 118, 210, 0.06)', padding: 24, marginBottom: 0, minHeight: 260, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+
+                {/* 中间：问答内容 */}
+                <div style={{
+                  background: '#fff',
+                  borderRadius: 8,
+                  boxShadow: '0 2px 8px rgba(25, 118, 210, 0.06)',
+                  padding: 24,
+                  width: 400,
+                  height: 480,
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}>
+                  <div style={{
+                    fontWeight: 700,
+                    color: '#1976d2',
+                    fontSize: 18,
+                    marginBottom: 12,
+                    flexShrink: 0
+                  }}>问答内容</div>
+
+                  <div style={{ overflowY: 'auto', flex: 1, paddingRight: 4 }}>
+                    {selectedRecord?.questions?.length > 0 ? (
+                      selectedRecord.questions.map((question, index) => (
+                        <div key={index} style={{
+                          marginBottom: 12,
+                          padding: 12,
+                          background: '#fafafa',
+                          borderRadius: 6
+                        }}>
+                          <p><strong>Q{index + 1}:</strong> {question}</p>
+                          <p><strong>A{index + 1}:</strong> {selectedRecord.answers?.[index] || '未回答'}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <div style={{ color: '#888' }}>暂无问答记录</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 右侧：雷达图与岗位建议 */}
+                <div style={{
+                  flex: 1,
+                  minWidth: 320,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 24
+                }}>
+                  {/* 能力六维图 */}
+                  <div style={{
+                    background: '#fff',
+                    borderRadius: 8,
+                    boxShadow: '0 2px 8px rgba(25, 118, 210, 0.06)',
+                    padding: 24,
+                    minHeight: 260,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
                     <div style={{ fontWeight: 700, color: '#1976d2', fontSize: 18, marginBottom: 12 }}>能力六维雷达图</div>
                     {selectedRecord && selectedRecord.result && (() => {
                       let result = {};
-                      console.log('原始result数据:', selectedRecord.result);
-                      
-                      // 检查result是否已经是对象
                       if (typeof selectedRecord.result === 'object') {
                         result = selectedRecord.result;
-                        console.log('result已经是对象:', result);
                       } else {
-                        // 如果是字符串，则解析
-                        try { 
-                          result = JSON.parse(selectedRecord.result || '{}'); 
-                          console.log('解析后的result:', result);
+                        try {
+                          result = JSON.parse(selectedRecord.result || '{}');
                         } catch (e) {
-                          console.error('解析result失败:', e);
                           return <div style={{ color: '#888' }}>数据格式错误</div>;
                         }
                       }
-                      
-                      // 处理新的数据格式：result.evaluation 包含JSON字符串
+
                       if (result.evaluation) {
-                        console.log('找到evaluation字段:', result.evaluation);
-                        // 提取JSON字符串（去除```json和```标记）
                         let evaluationStr = result.evaluation;
                         if (evaluationStr.includes('```json')) {
                           evaluationStr = evaluationStr.replace(/```json\n?/, '').replace(/```\n?/, '');
                         }
-                        console.log('提取的evaluation字符串:', evaluationStr);
-                        
                         try {
                           const evaluationData = JSON.parse(evaluationStr);
-                          console.log('解析的evaluation数据:', evaluationData);
                           if (evaluationData.abilities) {
-                            console.log('abilities数据:', evaluationData.abilities);
                             return <RadarChart abilities={evaluationData.abilities} />;
                           }
                         } catch (evalError) {
                           console.error('解析evaluation失败:', evalError);
                         }
                       }
-                      
-                      // 兼容旧格式：直接包含abilities
+
                       if (result.abilities) {
-                        console.log('abilities数据:', result.abilities);
                         return <RadarChart abilities={result.abilities} />;
                       }
-                      
-                      console.log('没有abilities数据');
+
                       return <div style={{ color: '#888' }}>暂无能力评测数据</div>;
                     })()}
                   </div>
-                  {/* 右下：岗位建议 */}
-                  <div style={{ background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px 0 rgba(25, 118, 210, 0.06)', padding: 24, minHeight: 120 }}>
+
+                  {/* 岗位建议 */}
+                  <div style={{
+                    background: '#fff',
+                    borderRadius: 8,
+                    boxShadow: '0 2px 8px rgba(25, 118, 210, 0.06)',
+                    padding: 24,
+                    minHeight: 120
+                  }}>
                     <div style={{ fontWeight: 700, color: '#1976d2', fontSize: 18, marginBottom: 12 }}>岗位建议</div>
                     {selectedRecord && selectedRecord.result && (() => {
                       let result = {};
-                      
-                      // 检查result是否已经是对象
                       if (typeof selectedRecord.result === 'object') {
                         result = selectedRecord.result;
                       } else {
-                        // 如果是字符串，则解析
-                        try { 
-                          result = JSON.parse(selectedRecord.result || '{}'); 
-                        } catch (e) {
-                          console.error('解析result失败:', e);
+                        try {
+                          result = JSON.parse(selectedRecord.result || '{}');
+                        } catch {
                           return <div style={{ color: '#888' }}>数据格式错误</div>;
                         }
                       }
-                      
-                      // 处理新的数据格式：result.evaluation 包含JSON字符串
+
                       if (result.evaluation) {
-                        // 提取JSON字符串（去除```json和```标记）
                         let evaluationStr = result.evaluation;
                         if (evaluationStr.includes('```json')) {
                           evaluationStr = evaluationStr.replace(/```json\n?/, '').replace(/```\n?/, '');
                         }
-                        
                         try {
                           const evaluationData = JSON.parse(evaluationStr);
-                          if (evaluationData.suggestions && evaluationData.suggestions.length > 0) {
-                            return <ul style={{ paddingLeft: 18 }}>{evaluationData.suggestions.map((s, i) => <li key={i} style={{ color: '#444', marginBottom: 6 }}>{s}</li>)}</ul>;
+                          if (evaluationData.suggestions?.length > 0) {
+                            return (
+                              <ul style={{ paddingLeft: 18 }}>
+                                {evaluationData.suggestions.map((s, i) => (
+                                  <li key={i} style={{ color: '#444', marginBottom: 6 }}>{s}</li>
+                                ))}
+                              </ul>
+                            );
                           }
-                        } catch (evalError) {
-                          console.error('解析evaluation失败:', evalError);
-                        }
+                        } catch {}
                       }
-                      
-                      // 兼容旧格式：直接包含suggestions
-                      if (result.suggestions && result.suggestions.length > 0) {
-                        return <ul style={{ paddingLeft: 18 }}>{result.suggestions.map((s, i) => <li key={i} style={{ color: '#444', marginBottom: 6 }}>{s}</li>)}</ul>;
+
+                      if (result.suggestions?.length > 0) {
+                        return (
+                          <ul style={{ paddingLeft: 18 }}>
+                            {result.suggestions.map((s, i) => (
+                              <li key={i} style={{ color: '#444', marginBottom: 6 }}>{s}</li>
+                            ))}
+                          </ul>
+                        );
                       }
-                      
+
                       return <div style={{ color: '#888' }}>暂无建议</div>;
                     })()}
                   </div>
                 </div>
+              </div>
+            )}
+            {(!showAdminPanel && activeTab === 'resume_edit') && (
+              <div style={{
+                flex: 1,
+                background: '#f4f8fd',
+                padding: 32,
+                paddingTop: '56px',
+                overflowY: 'auto',
+                overflowX: 'hidden'
+              }}>
+                <ResumeEditor />
+              </div>
+            )}
+            {(!showAdminPanel && activeTab === 'resume_history') && (
+              <div style={{
+                flex: 1,
+                background: '#f4f8fd',
+                padding: 32,
+                paddingTop: '56px',
+                overflowY: 'auto',
+                overflowX: 'hidden'
+              }}>
+                <ResumeHistory />
               </div>
             )}
             {activeTab === 'profile' && (

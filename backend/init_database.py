@@ -24,7 +24,7 @@ db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
 # 导入模型
-from app import User, InterviewRecord
+from app import User, InterviewRecord, ResumeModule, ResumeHistory
 
 def create_database():
     """创建数据库"""
