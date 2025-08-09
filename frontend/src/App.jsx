@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Button, Input, Card, message, Select, Divider, Form } from 'antd';
+import { Button, Input, Card, message, Select, Divider, Form, Modal, Tabs, Row, Col, Space } from 'antd';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import RadarChart from './components/RadarChart';
@@ -12,6 +12,7 @@ import AdminPanel from './components/AdminPanel';
 import ResumeEditor from './components/ResumeEditor';
 import ResumeHistory from './components/ResumeHistory';
 import Editor from '@monaco-editor/react';
+import ResumePreview from './components/ResumePreview';
 import { 
   UserOutlined, 
   VideoCameraOutlined, 
@@ -224,6 +225,11 @@ function App() {
   const [resumeUploaded, setResumeUploaded] = useState(false);
   const [resumeQuestions, setResumeQuestions] = useState([]);
   const [resumeLoading, setResumeLoading] = useState(false);
+  const [useSavedVisible, setUseSavedVisible] = useState(false);
+  const [historyList, setHistoryList] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [expandPreview, setExpandPreview] = useState({ open: false, resume: null, title: '' });
+  
   // 新增：用户信息状态
   const [userInfo, setUserInfo] = useState(null);
   // 新增：摄像头测试状态
@@ -1352,13 +1358,35 @@ class TreeNode {
                     {/* 简历上传 */}
                     <div>
                       <div style={{ fontWeight: 600, color: '#1976d2', marginBottom: '8px' }}>简历上传</div>
-                      <FileUpload
-                        accept=".md"
-                        onFileSelect={handleResumeUpload}
-                        buttonText={resumeUploaded ? '重新上传简历' : '上传简历(.md)'}
-                        disabled={interviewStarted || resumeLoading}
-                        loading={resumeLoading}
-                      />
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <div>
+                          <FileUpload
+                            accept=".md"
+                            onFileSelect={handleResumeUpload}
+                            buttonText={resumeUploaded ? '重新上传简历' : '上传简历(.md)'}
+                            disabled={interviewStarted || resumeLoading}
+                            loading={resumeLoading}
+                          />
+                        </div>
+                        <Button 
+                          onClick={async () => {
+                            try {
+                              setUseSavedVisible(true);
+                              setHistoryLoading(true);
+                              const token = localStorage.getItem('token');
+                              const res = await axios.get('/api/resume/histories', { headers: { Authorization: token } });
+                              setHistoryList(res.data.histories || []);
+                            } catch (e) {
+                              message.error('获取简历历史失败');
+                            } finally {
+                              setHistoryLoading(false);
+                            }
+                          }}
+                          disabled={interviewStarted || resumeLoading}
+                        >
+                          使用已编辑的简历
+                        </Button>
+                      </div>
                       {resumeUploaded && (
                         <div style={{ marginTop: '8px' }}>
                           <div style={{ fontSize: '12px', color: '#52c41a' }}>
@@ -2028,6 +2056,112 @@ class TreeNode {
     <div style={{ minHeight: '100vh', background: '#f4f8fd', overflowX: 'hidden', width: '100%', maxWidth: '100vw' }}>
       <TopBar />
       {mainContent}
+      {/* 已编辑简历选择弹窗 */}
+      <Modal
+        title="选择已编辑的简历"
+        open={useSavedVisible}
+        onCancel={() => setUseSavedVisible(false)}
+        footer={null}
+        width={1000}
+      >
+        {historyLoading ? (
+          <div style={{ textAlign: 'center', padding: 40 }}>加载中...</div>
+        ) : (
+          <Tabs
+            defaultActiveKey="completed"
+            items={[
+              {
+                key: 'completed',
+                label: '已完成',
+                children: (
+                  <Row gutter={[16,16]}>
+                    {(historyList || []).filter(h => h.status === 'completed').map(h => {
+                      const resumes = Array.isArray(h.resume_data) ? h.resume_data : (h.resume_data ? [h.resume_data] : []);
+                      return resumes.map((resume, idx) => (
+                        <Col span={8} key={`${h.id}-${idx}`}>
+                          <Card size="small" hoverable>
+                              <div style={{ height: 260, overflow: 'hidden', border: '1px solid #eaeaea', borderRadius: 6, padding: 8, background: '#fff' }}>
+                                <div style={{ height: '100%', overflow: 'auto' }}>
+                                  <ResumePreview resumeData={resume} size="small" />
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+                              <Button
+                                type="link"
+                                onClick={() => setExpandPreview({ open: true, resume, title: `任务 ${h.task_id} - 版本 ${idx+1}` })}
+                              >
+                                放大查看
+                              </Button>
+                              <Button
+                                type="primary"
+                                onClick={async () => {
+                                  try {
+                                    setResumeLoading(true);
+                                    const token = localStorage.getItem('token');
+                                    const res = await axios.post('/api/resume/use_history', { history_id: h.id, version_index: idx }, { headers: { Authorization: token } });
+                                    if (res.data.success) {
+                                      message.success('已使用所选简历');
+                                      await fetchUserInfo();
+                                      setResumeUploaded(true);
+                                      setResumeFile({ name: res.data.filename || 'history_resume.md' });
+                                      setUseSavedVisible(false);
+                                    } else {
+                                      message.error(res.data.msg || '使用失败');
+                                    }
+                                  } catch (e) {
+                                    message.error('使用失败');
+                                  } finally {
+                                    setResumeLoading(false);
+                                  }
+                                }}
+                              >
+                                选择此简历
+                              </Button>
+                            </div>
+                          </Card>
+                        </Col>
+                      ));
+                    })}
+                  </Row>
+                )
+              },
+              {
+                key: 'processing',
+                label: '生成中',
+                children: (
+                  <div style={{ color: '#999' }}>
+                    {(historyList || []).filter(h => h.status === 'processing').length === 0 ? '暂无生成中的任务' : '包含生成中的任务，稍后刷新即可选择'}
+                  </div>
+                )
+              },
+              {
+                key: 'failed',
+                label: '失败',
+                children: (
+                  <div style={{ color: '#999' }}>
+                    {(historyList || []).filter(h => h.status === 'failed').length === 0 ? '暂无失败的任务' : '存在失败任务，建议删除后重新生成'}
+                  </div>
+                )
+              }
+            ]}
+          />
+        )}
+      </Modal>
+
+      {/* 放大预览弹窗 */}
+      <Modal
+        title={expandPreview.title || '简历预览'}
+        open={expandPreview.open}
+        onCancel={() => setExpandPreview({ open: false, resume: null, title: '' })}
+        footer={null}
+        width={900}
+      >
+        {expandPreview.resume && (
+          <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
+            <ResumePreview resumeData={expandPreview.resume} />
+          </div>
+        )}
+      </Modal>
       {showCameraTest && (
         <CameraTest onClose={() => setShowCameraTest(false)} />
       )}

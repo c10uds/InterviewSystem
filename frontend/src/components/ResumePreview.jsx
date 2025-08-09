@@ -16,7 +16,8 @@ import {
 
 const { Title, Text, Paragraph } = Typography;
 
-const ResumePreview = ({ resumeData }) => {
+// 支持两种尺寸：large(用于页面/放大预览)、small(用于选择弹窗的缩略图)
+const ResumePreview = ({ resumeData, size = 'large' }) => {
   if (!resumeData) {
     return (
       <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
@@ -30,17 +31,18 @@ const ResumePreview = ({ resumeData }) => {
     if (!info) return null;
     
     return (
-      <div style={{ marginBottom: '24px' }}>
-        <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-          <Title level={2} style={{ margin: 0, color: '#1890ff' }}>
+      <div style={{ marginBottom: size === 'small' ? '12px' : '24px' }}>
+        <div style={{ textAlign: 'left', marginBottom: size === 'small' ? '8px' : '16px' }}>
+          <Title level={size === 'small' ? 4 : 2} style={{ margin: 0, color: '#000', fontWeight: 700 }}>
             {info.name || '姓名'}
           </Title>
-          <Text type="secondary" style={{ fontSize: '16px' }}>
-            {info.identity || '身份'}
-          </Text>
+          {info.identity && (
+            <Text type="secondary" style={{ fontSize: size === 'small' ? '12px' : '14px' }}>
+              {info.identity}
+            </Text>
+          )}
         </div>
-        
-        <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '16px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: size === 'small' ? '8px' : '12px', color: '#333' }}>
           {info.phone && (
             <Space>
               <PhoneOutlined />
@@ -53,25 +55,25 @@ const ResumePreview = ({ resumeData }) => {
               <Text>{info.email}</Text>
             </Space>
           )}
-          {info.age && (
+          {info.age && size !== 'small' && (
             <Space>
               <UserOutlined />
               <Text>{info.age}岁</Text>
             </Space>
           )}
-          {info.address && (
+          {info.address && size !== 'small' && (
             <Space>
               <EnvironmentOutlined />
               <Text>{info.address}</Text>
             </Space>
           )}
-          {info.qq && (
+          {info.qq && size !== 'small' && (
             <Space>
               <Text>QQ:</Text>
               <Text>{info.qq}</Text>
             </Space>
           )}
-          {info.wechat && (
+          {info.wechat && size !== 'small' && (
             <Space>
               <Text>微信:</Text>
               <Text>{info.wechat}</Text>
@@ -86,33 +88,32 @@ const ResumePreview = ({ resumeData }) => {
     if (!education) return null;
     
     return (
-      <div style={{ marginBottom: '24px' }}>
-        <Title level={4} style={{ color: '#1890ff', marginBottom: '12px' }}>
-          <BookOutlined style={{ marginRight: '8px' }} />
+      <div style={{ marginBottom: size === 'small' ? '12px' : '20px' }}>
+        <Title level={size === 'small' ? 5 : 4} style={{ color: '#000', marginBottom: '8px', fontWeight: 700 }}>
           教育经历
         </Title>
-        <Card size="small" style={{ marginBottom: '12px' }}>
+        <div style={{ marginBottom: '8px', border: '1px solid #eaeaea', borderRadius: 6, padding: size === 'small' ? 8 : 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <Text strong style={{ fontSize: '16px' }}>{education.school || '学校名称'}</Text>
+              <Text strong style={{ fontSize: size === 'small' ? '13px' : '16px' }}>{education.school || '学校名称'}</Text>
               <br />
-              <Text type="secondary">{education.major || '专业'} | {education.degree || '学历'}</Text>
+              <Text type="secondary" style={{ fontSize: size === 'small' ? 12 : 14 }}>{education.major || '专业'} | {education.degree || '学历'}</Text>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <Text type="secondary">{education.graduation_date || '毕业时间'}</Text>
+              <Text type="secondary" style={{ fontSize: size === 'small' ? 12 : 14 }}>{education.graduation_date || '毕业时间'}</Text>
               {education.gpa && (
                 <div>
-                  <Text type="secondary">GPA: {education.gpa}</Text>
+                  <Text type="secondary" style={{ fontSize: size === 'small' ? 12 : 14 }}>GPA: {education.gpa}</Text>
                 </div>
               )}
             </div>
           </div>
           {education.courses && (
-            <div style={{ marginTop: '8px' }}>
-              <Text type="secondary">相关课程: {education.courses}</Text>
+            <div style={{ marginTop: 6 }}>
+              <Text type="secondary" style={{ fontSize: size === 'small' ? 12 : 14 }}>相关课程: {education.courses}</Text>
             </div>
           )}
-        </Card>
+        </div>
       </div>
     );
   };
@@ -121,30 +122,29 @@ const ResumePreview = ({ resumeData }) => {
     if (!work) return null;
     
     return (
-      <div style={{ marginBottom: '24px' }}>
-        <Title level={4} style={{ color: '#1890ff', marginBottom: '12px' }}>
-          <TeamOutlined style={{ marginRight: '8px' }} />
+      <div style={{ marginBottom: size === 'small' ? '12px' : '20px' }}>
+        <Title level={size === 'small' ? 5 : 4} style={{ color: '#000', marginBottom: '8px', fontWeight: 700 }}>
           工作经历
         </Title>
-        <Card size="small" style={{ marginBottom: '12px' }}>
+        <div style={{ marginBottom: '8px', border: '1px solid #eaeaea', borderRadius: 6, padding: size === 'small' ? 8 : 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
-              <Text strong style={{ fontSize: '16px' }}>{work.company || '公司名称'}</Text>
+              <Text strong style={{ fontSize: size === 'small' ? '13px' : '16px' }}>{work.company || '公司名称'}</Text>
               <br />
-              <Text type="secondary">{work.position || '职位'}</Text>
+              <Text type="secondary" style={{ fontSize: size === 'small' ? 12 : 14 }}>{work.position || '职位'}</Text>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <Text type="secondary">
+              <Text type="secondary" style={{ fontSize: size === 'small' ? 12 : 14 }}>
                 {work.start_date || '开始时间'} - {work.end_date || '结束时间'}
               </Text>
             </div>
           </div>
           {work.description && (
-            <div style={{ marginTop: '8px' }}>
-              <Text>{work.description}</Text>
+            <div style={{ marginTop: 6 }}>
+              <Text style={{ fontSize: size === 'small' ? 12 : 14 }}>{work.description}</Text>
             </div>
           )}
-        </Card>
+        </div>
       </div>
     );
   };
@@ -153,35 +153,34 @@ const ResumePreview = ({ resumeData }) => {
     if (!project) return null;
     
     return (
-      <div style={{ marginBottom: '24px' }}>
-        <Title level={4} style={{ color: '#1890ff', marginBottom: '12px' }}>
-          <CodeOutlined style={{ marginRight: '8px' }} />
+      <div style={{ marginBottom: size === 'small' ? '12px' : '20px' }}>
+        <Title level={size === 'small' ? 5 : 4} style={{ color: '#000', marginBottom: '8px', fontWeight: 700 }}>
           项目经历
         </Title>
-        <Card size="small" style={{ marginBottom: '12px' }}>
+        <div style={{ marginBottom: '8px', border: '1px solid #eaeaea', borderRadius: 6, padding: size === 'small' ? 8 : 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
-              <Text strong style={{ fontSize: '16px' }}>{project.project_name || '项目名称'}</Text>
+              <Text strong style={{ fontSize: size === 'small' ? '13px' : '16px' }}>{project.project_name || '项目名称'}</Text>
               <br />
-              <Text type="secondary">担任角色: {project.role || '角色'}</Text>
+              <Text type="secondary" style={{ fontSize: size === 'small' ? 12 : 14 }}>担任角色: {project.role || '角色'}</Text>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <Text type="secondary">
+              <Text type="secondary" style={{ fontSize: size === 'small' ? 12 : 14 }}>
                 {project.start_date || '开始时间'} - {project.end_date || '结束时间'}
               </Text>
             </div>
           </div>
           {project.description && (
-            <div style={{ marginTop: '8px' }}>
-              <Text>{project.description}</Text>
+            <div style={{ marginTop: 6 }}>
+              <Text style={{ fontSize: size === 'small' ? 12 : 14 }}>{project.description}</Text>
             </div>
           )}
           {project.technologies && (
-            <div style={{ marginTop: '8px' }}>
-              <Text type="secondary">使用技术: {project.technologies}</Text>
+            <div style={{ marginTop: 6 }}>
+              <Text type="secondary" style={{ fontSize: size === 'small' ? 12 : 14 }}>使用技术: {project.technologies}</Text>
             </div>
           )}
-        </Card>
+        </div>
       </div>
     );
   };
@@ -190,26 +189,25 @@ const ResumePreview = ({ resumeData }) => {
     if (!competition) return null;
     
     return (
-      <div style={{ marginBottom: '24px' }}>
-        <Title level={4} style={{ color: '#1890ff', marginBottom: '12px' }}>
-          <TrophyOutlined style={{ marginRight: '8px' }} />
+      <div style={{ marginBottom: size === 'small' ? '12px' : '20px' }}>
+        <Title level={size === 'small' ? 5 : 4} style={{ color: '#000', marginBottom: '8px', fontWeight: 700 }}>
           竞赛经历
         </Title>
-        <Card size="small" style={{ marginBottom: '12px' }}>
+        <div style={{ marginBottom: '8px', border: '1px solid #eaeaea', borderRadius: 6, padding: size === 'small' ? 8 : 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
-              <Text strong style={{ fontSize: '16px' }}>{competition.competition_name || '竞赛名称'}</Text>
+              <Text strong style={{ fontSize: size === 'small' ? '13px' : '16px' }}>{competition.competition_name || '竞赛名称'}</Text>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <Text type="secondary">{competition.participation_time || '参与时间'}</Text>
+              <Text type="secondary" style={{ fontSize: size === 'small' ? 12 : 14 }}>{competition.participation_time || '参与时间'}</Text>
             </div>
           </div>
           {competition.detailed_content && (
-            <div style={{ marginTop: '8px' }}>
-              <Text>{competition.detailed_content}</Text>
+            <div style={{ marginTop: 6 }}>
+              <Text style={{ fontSize: size === 'small' ? 12 : 14 }}>{competition.detailed_content}</Text>
             </div>
           )}
-        </Card>
+        </div>
       </div>
     );
   };
@@ -218,25 +216,24 @@ const ResumePreview = ({ resumeData }) => {
     if (!skills) return null;
     
     return (
-      <div style={{ marginBottom: '24px' }}>
-        <Title level={4} style={{ color: '#1890ff', marginBottom: '12px' }}>
-          <StarOutlined style={{ marginRight: '8px' }} />
+      <div style={{ marginBottom: size === 'small' ? '12px' : '20px' }}>
+        <Title level={size === 'small' ? 5 : 4} style={{ color: '#000', marginBottom: '8px', fontWeight: 700 }}>
           技能特长
         </Title>
-        <Card size="small" style={{ marginBottom: '12px' }}>
+        <div style={{ marginBottom: '8px', border: '1px solid #eaeaea', borderRadius: 6, padding: size === 'small' ? 8 : 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
-              <Text strong style={{ fontSize: '16px' }}>{skills.skill_name || '技能名称'}</Text>
+              <Text strong style={{ fontSize: size === 'small' ? '13px' : '16px' }}>{skills.skill_name || '技能名称'}</Text>
               <br />
-              <Tag color="blue">{skills.proficiency || '熟练程度'}</Tag>
+              <Tag color="blue" style={{ fontSize: size === 'small' ? 10 : 12, padding: size === 'small' ? '0 6px' : '2px 8px' }}>{skills.proficiency || '熟练程度'}</Tag>
             </div>
           </div>
           {skills.description && (
-            <div style={{ marginTop: '8px' }}>
-              <Text>{skills.description}</Text>
+            <div style={{ marginTop: 6 }}>
+              <Text style={{ fontSize: size === 'small' ? 12 : 14 }}>{skills.description}</Text>
             </div>
           )}
-        </Card>
+        </div>
       </div>
     );
   };
@@ -245,28 +242,27 @@ const ResumePreview = ({ resumeData }) => {
     if (!certificates) return null;
     
     return (
-      <div style={{ marginBottom: '24px' }}>
-        <Title level={4} style={{ color: '#1890ff', marginBottom: '12px' }}>
-          <TrophyOutlined style={{ marginRight: '8px' }} />
+      <div style={{ marginBottom: size === 'small' ? '12px' : '20px' }}>
+        <Title level={size === 'small' ? 5 : 4} style={{ color: '#000', marginBottom: '8px', fontWeight: 700 }}>
           荣誉证书
         </Title>
-        <Card size="small" style={{ marginBottom: '12px' }}>
+        <div style={{ marginBottom: '8px', border: '1px solid #eaeaea', borderRadius: 6, padding: size === 'small' ? 8 : 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ flex: 1 }}>
-              <Text strong style={{ fontSize: '16px' }}>{certificates.certificate_name || '证书名称'}</Text>
+              <Text strong style={{ fontSize: size === 'small' ? '13px' : '16px' }}>{certificates.certificate_name || '证书名称'}</Text>
               <br />
-              <Text type="secondary">颁发机构: {certificates.issuing_organization || '颁发机构'}</Text>
+              <Text type="secondary" style={{ fontSize: size === 'small' ? 12 : 14 }}>颁发机构: {certificates.issuing_organization || '颁发机构'}</Text>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <Text type="secondary">{certificates.issue_date || '颁发时间'}</Text>
+              <Text type="secondary" style={{ fontSize: size === 'small' ? 12 : 14 }}>{certificates.issue_date || '颁发时间'}</Text>
             </div>
           </div>
           {certificates.description && (
-            <div style={{ marginTop: '8px' }}>
-              <Text>{certificates.description}</Text>
+            <div style={{ marginTop: 6 }}>
+              <Text style={{ fontSize: size === 'small' ? 12 : 14 }}>{certificates.description}</Text>
             </div>
           )}
-        </Card>
+        </div>
       </div>
     );
   };
@@ -274,16 +270,15 @@ const ResumePreview = ({ resumeData }) => {
   return (
     <div style={{ 
       background: '#fff', 
-      padding: '24px', 
-      borderRadius: '8px',
-      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
-      maxWidth: '800px',
-      margin: '0 auto',
+      padding: size === 'small' ? '12px' : '24px', 
+      borderRadius: '6px',
+      border: '1px solid #eaeaea',
+      maxWidth: size === 'small' ? '100%' : '800px',
+      margin: size === 'small' ? 0 : '0 auto',
       fontFamily: 'Arial, sans-serif'
     }}>
       {renderPersonalInfo(resumeData.personal_info)}
-      
-      <Divider />
+      {size !== 'small' && <Divider />}
       
       {renderEducation(resumeData.education)}
       {renderWorkExperience(resumeData.work_experience)}

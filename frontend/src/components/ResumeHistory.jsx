@@ -65,6 +65,23 @@ const ResumeHistory = () => {
     setPreviewVisible(true);
   };
 
+  const handleDeleteHistory = async (historyId) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(`/api/resume/histories/${historyId}`, {
+        headers: { Authorization: token }
+      });
+      message.success('删除成功');
+      // 若删除的是当前选中的记录，清空右侧
+      if (selectedHistory && selectedHistory.id === historyId) {
+        setSelectedHistory(null);
+      }
+      fetchHistories();
+    } catch (error) {
+      message.error('删除失败');
+    }
+  };
+
   const handleDownload = async (history, index = 0) => {
     try {
       const token = localStorage.getItem('token');
@@ -277,71 +294,167 @@ const ResumeHistory = () => {
   };
 
   return (
-    <div style={{ padding: '20px' }}>
-      <Title level={2}>简历历史</Title>
-      <Paragraph>
-        在生成的待选简历中，浏览、选择并命名，作为添加的简历
-      </Paragraph>
+    <div style={{ 
+      padding: '20px', 
+      height: '100vh', 
+      display: 'flex', 
+      flexDirection: 'column',
+      overflow: 'hidden'
+    }}>
+      <div style={{ marginBottom: '16px', flexShrink: 0 }}>
+        <Title level={2}>简历历史</Title>
+        <Paragraph>
+          在生成的待选简历中，浏览、选择并命名，作为添加的简历
+        </Paragraph>
+      </div>
       
-      <Row gutter={24}>
-        {/* 左侧历史列表 */}
-        <Col span={8}>
-          <Card title="生成历史列表" style={{ height: 'fit-content' }}>
-            {histories.length === 0 ? (
-              <Empty description="暂无简历历史" />
-            ) : (
-              <List
-                dataSource={histories}
-                renderItem={(history) => (
-                  <List.Item
-                    style={{
-                      border: '1px solid #d9d9d9',
-                      borderRadius: '8px',
-                      marginBottom: '12px',
-                      padding: '16px',
-                      cursor: 'pointer',
-                      background: selectedHistory?.id === history.id ? '#f0f8ff' : '#fff'
-                    }}
-                    onClick={() => setSelectedHistory(history)}
-                  >
-                    <List.Item.Meta
-                      title={
-                        <Space>
-                          <Text strong>任务ID: {history.task_id}</Text>
-                          {getStatusIcon(history.status)}
-                          <Tag color={getStatusColor(history.status)}>
-                            {getStatusText(history.status)}
-                          </Tag>
-                        </Space>
-                      }
-                      description={
-                        <div>
-                          <p>生成类型: {history.generation_type}</p>
-                          <p>创建时间: {new Date(history.created_at).toLocaleString()}</p>
-                          <p>更新时间: {new Date(history.updated_at).toLocaleString()}</p>
-                        </div>
-                      }
-                    />
-                    <Button 
-                      type="primary" 
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleViewDetails(history);
+      <Row gutter={24} style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        {/* 左侧历史列表（固定高度，内部滚动） */}
+        <Col span={8} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <Card 
+            title="生成历史列表" 
+            style={{ 
+              height: '100%', 
+              display: 'flex', 
+              flexDirection: 'column',
+              overflow: 'hidden'
+            }}
+            styles={{ 
+              body: { 
+                padding: 0, 
+                display: 'flex', 
+                flexDirection: 'column', 
+                height: '100%',
+                overflow: 'hidden'
+              } 
+            }}
+          >
+            <div style={{ 
+              padding: 12, 
+              overflowY: 'auto', 
+              flex: 1, 
+              minHeight: 0,
+              maxHeight: '100%'
+            }}>
+              {histories.length === 0 ? (
+                <Empty description="暂无简历历史" />
+              ) : (
+                <List
+                  dataSource={histories}
+                  renderItem={(history) => (
+                    <List.Item
+                      style={{
+                        border: '1px solid #e8e8e8',
+                        borderRadius: '6px',
+                        marginBottom: '8px',
+                        padding: '12px',
+                        cursor: 'pointer',
+                        background: selectedHistory?.id === history.id ? '#f6f8ff' : '#fff',
+                        transition: 'all 0.2s ease',
+                        boxShadow: selectedHistory?.id === history.id ? '0 2px 8px rgba(24, 144, 255, 0.15)' : '0 1px 3px rgba(0, 0, 0, 0.1)'
                       }}
+                      onClick={() => setSelectedHistory(history)}
                     >
-                      查看详情
-                    </Button>
-                  </List.Item>
-                )}
-              />
-            )}
+                      <div style={{ width: '100%' }}>
+                        {/* 第一行：任务ID和状态 */}
+                        <div style={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between', 
+                          alignItems: 'center',
+                          marginBottom: '8px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Text strong style={{ fontSize: '13px', color: '#262626' }}>
+                              {history.task_id.slice(0, 8)}...
+                            </Text>
+                            {getStatusIcon(history.status)}
+                            <Tag 
+                              color={getStatusColor(history.status)} 
+                              size="small"
+                              style={{ fontSize: '11px', padding: '0 6px' }}
+                            >
+                              {getStatusText(history.status)}
+                            </Tag>
+                          </div>
+                          <Space size="small">
+                            <Button 
+                              type="primary" 
+                              size="small"
+                              style={{ fontSize: '11px', height: '24px', padding: '0 8px' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleViewDetails(history);
+                              }}
+                            >
+                              查看
+                            </Button>
+                            <Button
+                              danger
+                              size="small"
+                              style={{ fontSize: '11px', height: '24px', padding: '0 8px' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                Modal.confirm({
+                                  title: '确认删除该任务？',
+                                  content: '删除后不可恢复',
+                                  okText: '删除',
+                                  okButtonProps: { danger: true },
+                                  cancelText: '取消',
+                                  onOk: () => handleDeleteHistory(history.id)
+                                });
+                              }}
+                            >
+                              删除
+                            </Button>
+                          </Space>
+                        </div>
+                        
+                        {/* 第二行：类型和时间 */}
+                        <div style={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between', 
+                          alignItems: 'center',
+                          fontSize: '11px',
+                          color: '#8c8c8c'
+                        }}>
+                          <span>类型: {history.generation_type}</span>
+                          <span>{new Date(history.created_at).toLocaleDateString()} {new Date(history.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      </div>
+                    </List.Item>
+                  )}
+                />
+              )}
+            </div>
           </Card>
         </Col>
         
-        {/* 右侧简历预览 */}
-        <Col span={16}>
-          <Card title="简历预览">
+        {/* 右侧简历预览（固定高度，内部滚动） */}
+        <Col span={16} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <Card 
+            title="简历预览" 
+            style={{ 
+              height: '100%', 
+              display: 'flex', 
+              flexDirection: 'column',
+              overflow: 'hidden'
+            }} 
+            styles={{ 
+              body: { 
+                padding: 16, 
+                height: '100%', 
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column'
+              } 
+            }}
+          >
+            <div style={{ 
+              overflowY: 'auto', 
+              height: '100%', 
+              minHeight: 0,
+              maxHeight: '100%'
+            }}>
             {selectedHistory ? (
               <div>
                 {selectedHistory.status === 'processing' && (
@@ -352,46 +465,70 @@ const ResumeHistory = () => {
                 )}
                 
                 {selectedHistory.status === 'completed' && selectedHistory.resume_data && (
-                  <Tabs
-                    defaultActiveKey="preview"
-                    items={[
-                      {
-                        key: 'preview',
-                        label: '预览',
-                        children: (
-                          <div style={{ padding: '20px 0' }}>
-                            {Array.isArray(selectedHistory.resume_data) ? 
-                              selectedHistory.resume_data.map((resume, index) => (
-                                <div key={index} style={{ marginBottom: '20px' }}>
-                                  <Title level={4}>简历版本 {index + 1}</Title>
-                                  <ResumePreview resumeData={resume} />
-                                </div>
-                              )) : 
-                              <ResumePreview resumeData={selectedHistory.resume_data} />
-                            }
-                          </div>
-                        )
-                      },
-                      {
-                        key: 'download',
-                        label: '下载',
-                        children: (
-                          <div style={{ padding: '20px 0' }}>
-                            <Row gutter={16}>
+                  <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                    <Tabs
+                      defaultActiveKey="preview"
+                      style={{ 
+                        height: '100%', 
+                        display: 'flex', 
+                        flexDirection: 'column',
+                        overflow: 'hidden'
+                      }}
+                      styles={{
+                        content: {
+                          height: '100%',
+                          overflow: 'hidden'
+                        }
+                      }}
+                      items={[
+                        {
+                          key: 'preview',
+                          label: '预览',
+                          children: (
+                            <div style={{ 
+                              padding: '20px 0', 
+                              overflowY: 'auto', 
+                              height: '100%',
+                              maxHeight: '100%'
+                            }}>
                               {Array.isArray(selectedHistory.resume_data) ? 
                                 selectedHistory.resume_data.map((resume, index) => (
-                                  <Col span={8} key={index}>
-                                    {renderResumePreview(resume, index)}
-                                  </Col>
+                                  <div key={index} style={{ marginBottom: '20px' }}>
+                                    <Title level={4}>简历版本 {index + 1}</Title>
+                                    <ResumePreview resumeData={resume} />
+                                  </div>
                                 )) : 
-                                renderResumePreview(selectedHistory.resume_data, 0)
+                                <ResumePreview resumeData={selectedHistory.resume_data} />
                               }
-                            </Row>
-                          </div>
-                        )
-                      }
-                    ]}
-                  />
+                            </div>
+                          )
+                        },
+                        {
+                          key: 'download',
+                          label: '下载',
+                          children: (
+                            <div style={{ 
+                              padding: '20px 0', 
+                              overflowY: 'auto', 
+                              height: '100%',
+                              maxHeight: '100%'
+                            }}>
+                              <Row gutter={16}>
+                                {Array.isArray(selectedHistory.resume_data) ? 
+                                  selectedHistory.resume_data.map((resume, index) => (
+                                    <Col span={8} key={index}>
+                                      {renderResumePreview(resume, index)}
+                                    </Col>
+                                  )) : 
+                                  renderResumePreview(selectedHistory.resume_data, 0)
+                                }
+                              </Row>
+                            </div>
+                          )
+                        }
+                      ]}
+                    />
+                  </div>
                 )}
                 
                 {selectedHistory.status === 'failed' && (
@@ -407,6 +544,7 @@ const ResumeHistory = () => {
                 <p style={{ marginTop: '16px', color: '#999' }}>请选择一个简历历史查看详情</p>
               </div>
             )}
+            </div>
           </Card>
         </Col>
       </Row>

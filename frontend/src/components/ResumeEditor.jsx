@@ -134,7 +134,7 @@ const ResumeEditor = () => {
       setLoading(true);
       const token = localStorage.getItem('token');
       const response = await axios.put(`/api/resume/modules/${currentModule.id}`, {
-        content: values
+        content: JSON.stringify(values)
       }, {
         headers: { Authorization: token }
       });
@@ -286,18 +286,22 @@ const ResumeEditor = () => {
     return moduleTypeConfig ? moduleTypeConfig.fields : [];
   };
 
-  // 生成预览数据
+  // 生成预览数据（兼容对象或字符串）
   const generatePreviewData = () => {
     const previewData = {};
-    modules.forEach(module => {
-      if (module.content) {
-        try {
-          const content = JSON.parse(module.content);
-          previewData[module.module_type] = content;
-        } catch (e) {
-          console.error('解析模块内容失败:', e);
+    modules.forEach((m) => {
+      if (!m || !m.content) return;
+      let content = m.content;
+      try {
+        if (typeof content === 'string') {
+          content = JSON.parse(content);
         }
+      } catch (err) {
+        // 保底：如果解析失败，跳过该模块
+        console.warn('预览解析失败，已跳过模块:', m.module_type, err);
+        return;
       }
+      previewData[m.module_type] = content || {};
     });
     return previewData;
   };
@@ -413,7 +417,7 @@ const ResumeEditor = () => {
               ),
               children: (
                 <div style={{ padding: '20px 0' }}>
-                  <ResumePreview resumeData={generatePreviewData()} />
+                          <ResumePreview resumeData={generatePreviewData()} size="large" />
                 </div>
               )
             }

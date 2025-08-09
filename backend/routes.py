@@ -1214,7 +1214,8 @@ def init_routes(app):
                 module_type=module_type,
                 module_name=module_name,
                 content=json.dumps({}),
-                order_index=max_order + 1
+                order_index=max_order + 1,
+                is_active=True
             )
             
             db.session.add(module)
@@ -1240,8 +1241,12 @@ def init_routes(app):
             
             data = request.get_json()
             content = data.get('content', {})
-            
-            module.content = json.dumps(content)
+
+            # content 可能已是字符串（前端已做了 JSON.stringify），也可能是对象
+            if isinstance(content, str):
+                module.content = content
+            else:
+                module.content = json.dumps(content)
             module.updated_at = datetime.utcnow()
             
             db.session.commit()
@@ -1286,6 +1291,24 @@ def init_routes(app):
         except Exception as e:
             logger.error(f"获取简历历史失败: {e}")
             return jsonify({"success": False, "msg": "获取简历历史失败"}), 500
+
+    @app.route('/api/resume/histories/<int:history_id>', methods=['DELETE'])
+    @jwt_required
+    def delete_resume_history(user, history_id):
+        """删除指定的简历历史记录"""
+        try:
+            history = ResumeHistory.query.filter_by(id=history_id, user_id=user.id).first()
+            if not history:
+                return jsonify({"success": False, "msg": "简历历史不存在"}), 404
+
+            db.session.delete(history)
+            db.session.commit()
+
+            return jsonify({"success": True, "msg": "删除成功"})
+        except Exception as e:
+            logger.error(f"删除简历历史失败: {e}")
+            db.session.rollback()
+            return jsonify({"success": False, "msg": "删除简历历史失败"}), 500
 
     @app.route('/api/resume/generate', methods=['POST'])
     @jwt_required
@@ -1434,6 +1457,326 @@ def init_routes(app):
             logger.error(f"保存简历失败: {e}")
             db.session.rollback()
             return jsonify({"success": False, "msg": "保存简历失败"}), 500
+
+    @app.route('/api/resume/use_history', methods=['POST'])
+    @jwt_required
+    def use_history_resume(user):
+        """选择指定的历史记录版本作为当前简历"""
+        try:
+            data = request.get_json() or {}
+            history_id = data.get('history_id')
+            version_index = int(data.get('version_index', 0))
+
+            if not history_id:
+                return jsonify({"success": False, "msg": "history_id 必填"}), 400
+
+            history = ResumeHistory.query.filter_by(id=history_id, user_id=user.id, status='completed').first()
+            if not history:
+                return jsonify({"success": False, "msg": "简历历史不存在或未完成"}), 404
+
+            # 解析该历史的结构化数据
+            try:
+                data = json.loads(history.resume_data) if history.resume_data else {}
+            except Exception:
+                data = {}
+
+            if isinstance(data, list):
+                if version_index < 0 or version_index >= len(data):
+                    return jsonify({"success": False, "msg": "版本索引无效"}), 400
+                resume_data = data[version_index]
+            elif isinstance(data, dict):
+                resume_data = data
+            else:
+                resume_data = {}
+
+            # 从结构化数据生成 Markdown 文本
+            sections = []
+            info = resume_data.get('personal_info') or {}
+            if info:
+                lines = [
+                    f"姓名：{info.get('name','')}",
+                    f"性别：{info.get('gender','')}",
+                    f"手机：{info.get('phone','')}",
+                    f"邮箱：{info.get('email','')}",
+                    f"年龄：{info.get('age','')}",
+                    f"身份：{info.get('identity','')}"
+                ]
+                sections.append("## 基本信息\n" + "\n".join(lines))
+            edu = resume_data.get('education') or {}
+            if edu:
+                sections.append("## 教育经历\n" + "\n".join([
+                    f"学校：{edu.get('school','')}",
+                    f"专业：{edu.get('major','')}",
+                    f"学历：{edu.get('degree','')}",
+                    f"毕业时间：{edu.get('graduation_date','')}",
+                    f"GPA：{edu.get('gpa','')}"
+                ]))
+            work = resume_data.get('work_experience') or {}
+            if work:
+                sections.append("## 工作经历\n" + "\n".join([
+                    f"公司：{work.get('company','')}",
+                    f"职位：{work.get('position','')}",
+                    f"时间：{work.get('start_date','')} - {work.get('end_date','')}",
+                    f"描述：{work.get('description','')}"
+                ]))
+            project = resume_data.get('project_experience') or {}
+            if project:
+                sections.append("## 项目经历\n" + "\n".join([
+                    f"项目：{project.get('project_name','')}",
+                    f"角色：{project.get('role','')}",
+                    f"时间：{project.get('start_date','')} - {project.get('end_date','')}",
+                    f"描述：{project.get('description','')}",
+                    f"技术：{project.get('technologies','')}"
+                ]))
+            comp = resume_data.get('competition') or {}
+            if comp:
+                sections.append("## 竞赛经历\n" + "\n".join([
+                    f"竞赛：{comp.get('competition_name','')}",
+                    f"时间：{comp.get('participation_time','')}",
+                    f"内容：{comp.get('detailed_content','')}"
+                ]))
+            skills = resume_data.get('skills') or {}
+            if skills:
+                sections.append("## 技能特长\n" + "\n".join([
+                    f"技能：{skills.get('skill_name','')}",
+                    f"熟练度：{skills.get('proficiency','')}",
+                    f"说明：{skills.get('description','')}"
+                ]))
+            certs = resume_data.get('certificates') or {}
+            if certs:
+                sections.append("## 荣誉证书\n" + "\n".join([
+                    f"证书：{certs.get('certificate_name','')}",
+                    f"机构：{certs.get('issuing_organization','')}",
+                    f"时间：{certs.get('issue_date','')}",
+                    f"说明：{certs.get('description','')}"
+                ]))
+
+            resume_markdown = "\n\n".join([s for s in sections if s.strip()])
+            if not resume_markdown.strip():
+                return jsonify({"success": False, "msg": "该版本简历数据为空，无法使用"}), 400
+
+            user.resume_content = resume_markdown
+            user.resume_filename = f"history_{history.task_id}_v{version_index+1}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.md"
+            user.resume_upload_time = datetime.utcnow()
+            db.session.commit()
+
+            return jsonify({
+                "success": True,
+                "msg": "已使用所选历史简历作为当前简历",
+                "filename": user.resume_filename
+            })
+        except Exception as e:
+            logger.error(f"use_history_resume 失败: {e}")
+            db.session.rollback()
+            return jsonify({"success": False, "msg": "操作失败"}), 500
+
+    @app.route('/api/resume/use_saved', methods=['POST'])
+    @jwt_required
+    def use_saved_resume(user):
+        """将已编辑并保存的简历模块汇总为用户当前简历内容"""
+        try:
+            logger.info(f"[use_saved_resume] user_id={user.id}")
+            # 兼容历史数据：is_active 可能为 NULL，这里放宽为“未显式为 False 的都算有效”
+            modules = (
+                ResumeModule.query
+                .filter(ResumeModule.user_id == user.id)
+                .filter((ResumeModule.is_active == True) | (ResumeModule.is_active.is_(None)))
+                .order_by(ResumeModule.order_index)
+                .all()
+            )
+            logger.info(f"[use_saved_resume] modules_found={len(modules)}")
+
+            # 如果编辑器没有模块，回退到最近一次“简历历史”或已有的 user.resume_content
+            if not modules:
+                latest_history = (
+                    ResumeHistory.query
+                    .filter_by(user_id=user.id, status='completed')
+                    .order_by(ResumeHistory.created_at.desc())
+                    .first()
+                )
+                if latest_history and latest_history.resume_data:
+                    try:
+                        data = json.loads(latest_history.resume_data)
+                        # 兼容数组或对象两种形式
+                        resume_data = data[0] if isinstance(data, list) and data else (data if isinstance(data, dict) else {})
+                    except Exception:
+                        resume_data = {}
+
+                    # 直接从结构化数据生成Markdown
+                    sections = []
+                    info = resume_data.get('personal_info') or {}
+                    if info:
+                        lines = [
+                            f"姓名：{info.get('name','')}",
+                            f"性别：{info.get('gender','')}",
+                            f"手机：{info.get('phone','')}",
+                            f"邮箱：{info.get('email','')}",
+                            f"年龄：{info.get('age','')}",
+                            f"身份：{info.get('identity','')}"
+                        ]
+                        sections.append("## 基本信息\n" + "\n".join(lines))
+                    edu = resume_data.get('education') or {}
+                    if edu:
+                        sections.append("## 教育经历\n" + "\n".join([
+                            f"学校：{edu.get('school','')}",
+                            f"专业：{edu.get('major','')}",
+                            f"学历：{edu.get('degree','')}",
+                            f"毕业时间：{edu.get('graduation_date','')}",
+                            f"GPA：{edu.get('gpa','')}"
+                        ]))
+                    work = resume_data.get('work_experience') or {}
+                    if work:
+                        sections.append("## 工作经历\n" + "\n".join([
+                            f"公司：{work.get('company','')}",
+                            f"职位：{work.get('position','')}",
+                            f"时间：{work.get('start_date','')} - {work.get('end_date','')}",
+                            f"描述：{work.get('description','')}"
+                        ]))
+                    project = resume_data.get('project_experience') or {}
+                    if project:
+                        sections.append("## 项目经历\n" + "\n".join([
+                            f"项目：{project.get('project_name','')}",
+                            f"角色：{project.get('role','')}",
+                            f"时间：{project.get('start_date','')} - {project.get('end_date','')}",
+                            f"描述：{project.get('description','')}",
+                            f"技术：{project.get('technologies','')}"
+                        ]))
+                    comp = resume_data.get('competition') or {}
+                    if comp:
+                        sections.append("## 竞赛经历\n" + "\n".join([
+                            f"竞赛：{comp.get('competition_name','')}",
+                            f"时间：{comp.get('participation_time','')}",
+                            f"内容：{comp.get('detailed_content','')}"
+                        ]))
+                    skills = resume_data.get('skills') or {}
+                    if skills:
+                        sections.append("## 技能特长\n" + "\n".join([
+                            f"技能：{skills.get('skill_name','')}",
+                            f"熟练度：{skills.get('proficiency','')}",
+                            f"说明：{skills.get('description','')}"
+                        ]))
+                    certs = resume_data.get('certificates') or {}
+                    if certs:
+                        sections.append("## 荣誉证书\n" + "\n".join([
+                            f"证书：{certs.get('certificate_name','')}",
+                            f"机构：{certs.get('issuing_organization','')}",
+                            f"时间：{certs.get('issue_date','')}",
+                            f"说明：{certs.get('description','')}"
+                        ]))
+
+                    resume_markdown = "\n\n".join([s for s in sections if s.strip()]) or (user.resume_content or "")
+                    if not resume_markdown.strip():
+                        return jsonify({"success": False, "msg": "暂无可用的编辑器简历，请先在简历编辑器新增并保存模块"})
+
+                    user.resume_content = resume_markdown
+                    user.resume_filename = f"editor_resume_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.md"
+                    user.resume_upload_time = datetime.utcnow()
+                    db.session.commit()
+
+                    return jsonify({
+                        "success": True,
+                        "msg": "已使用最近一次生成的简历作为当前简历",
+                        "filename": user.resume_filename
+                    })
+
+                # 若无历史，且用户已有简历内容，则直接视为成功
+                if user.resume_content:
+                    return jsonify({
+                        "success": True,
+                        "msg": "已使用现有简历内容",
+                        "filename": user.resume_filename or "existing_resume.md"
+                    })
+
+                return jsonify({"success": False, "msg": "暂无已编辑的简历模块，请先在简历编辑器新增并保存模块"})
+
+            # 生成简历文本（简单Markdown）
+            sections = []
+            for module in modules:
+                try:
+                    content = json.loads(module.content) if module.content else {}
+                except Exception:
+                    content = {}
+                title = module.module_name or module.module_type
+
+                # 按模块类型组织
+                if module.module_type == 'personal_info':
+                    lines = [
+                        f"姓名：{content.get('name','')}",
+                        f"性别：{content.get('gender','')}",
+                        f"手机：{content.get('phone','')}",
+                        f"邮箱：{content.get('email','')}",
+                        f"年龄：{content.get('age','')}",
+                        f"身份：{content.get('identity','')}"
+                    ]
+                    sections.append(f"## 基本信息\n" + "\n".join(lines))
+                elif module.module_type == 'education':
+                    lines = [
+                        f"学校：{content.get('school','')}",
+                        f"专业：{content.get('major','')}",
+                        f"学历：{content.get('degree','')}",
+                        f"毕业时间：{content.get('graduation_date','')}",
+                        f"GPA：{content.get('gpa','')}"
+                    ]
+                    sections.append(f"## 教育经历\n" + "\n".join(lines))
+                elif module.module_type == 'work_experience':
+                    lines = [
+                        f"公司：{content.get('company','')}",
+                        f"职位：{content.get('position','')}",
+                        f"时间：{content.get('start_date','')} - {content.get('end_date','')}",
+                        f"描述：{content.get('description','')}"
+                    ]
+                    sections.append(f"## 工作经历\n" + "\n".join(lines))
+                elif module.module_type == 'project_experience':
+                    lines = [
+                        f"项目：{content.get('project_name','')}",
+                        f"角色：{content.get('role','')}",
+                        f"时间：{content.get('start_date','')} - {content.get('end_date','')}",
+                        f"描述：{content.get('description','')}",
+                        f"技术：{content.get('technologies','')}"
+                    ]
+                    sections.append(f"## 项目经历\n" + "\n".join(lines))
+                elif module.module_type == 'competition':
+                    lines = [
+                        f"竞赛：{content.get('competition_name','')}",
+                        f"时间：{content.get('participation_time','')}",
+                        f"内容：{content.get('detailed_content','')}"
+                    ]
+                    sections.append(f"## 竞赛经历\n" + "\n".join(lines))
+                elif module.module_type == 'skills':
+                    lines = [
+                        f"技能：{content.get('skill_name','')}",
+                        f"熟练度：{content.get('proficiency','')}",
+                        f"说明：{content.get('description','')}"
+                    ]
+                    sections.append(f"## 技能特长\n" + "\n".join(lines))
+                elif module.module_type == 'certificates':
+                    lines = [
+                        f"证书：{content.get('certificate_name','')}",
+                        f"机构：{content.get('issuing_organization','')}",
+                        f"时间：{content.get('issue_date','')}",
+                        f"说明：{content.get('description','')}"
+                    ]
+                    sections.append(f"## 荣誉证书\n" + "\n".join(lines))
+                else:
+                    sections.append(f"## {title}\n" + json.dumps(content, ensure_ascii=False))
+
+            resume_markdown = "\n\n".join([s for s in sections if s.strip()])
+
+            # 更新到用户信息中
+            user.resume_content = resume_markdown
+            user.resume_filename = f"editor_resume_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.md"
+            user.resume_upload_time = datetime.utcnow()
+            db.session.commit()
+
+            return jsonify({
+                "success": True,
+                "msg": "已使用编辑器简历作为当前简历",
+                "filename": user.resume_filename
+            })
+        except Exception as e:
+            logger.error(f"use_saved_resume 失败: {e}")
+            db.session.rollback()
+            return jsonify({"success": False, "msg": "操作失败"}), 500
 
     # ====== 简历功能 API 结束 ======
 
